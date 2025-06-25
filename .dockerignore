@@ -1,0 +1,116 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.pytest_cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.dmypy.json
+dmypy.json
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Build and distribution
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PDM
+.pdm-python
+.pdm.toml
+__pypackages__/
+
+# Testing
+htmlcov/
+.coverage
+.pytest_cache/
+.hypothesis/
+
+# Documentation
+docs/_build/
+
+# Generated files
+*.parquet
+*.csv
+*.npy
+!example_schema.json
+
+# Temporary files
+tmp/
+temp/
+
+# Logs
+*.log
+
+# Node modules (if any)
+node_modules/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# ruff
+.ruff_cache/
+
+# GitHub Actions
+.github/
+
+# Docker
+Dockerfile*
+.dockerignore
+
+# Test files
+test_collection.*

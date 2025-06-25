@@ -8,66 +8,380 @@ Usage::
 The script is also installed as ``milvus-fake-data`` when the package is
 installed via PDM/pip.
 """
+
 from __future__ import annotations
 
-import sys
-import os
-from pathlib import Path
-
 import json
+import os
+import sys
 import tempfile
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
-import pandas as pd
+from pymilvus import CollectionSchema, DataType, FieldSchema
+from pymilvus.bulk_writer import BulkFileType, LocalBulkWriter
 
+if TYPE_CHECKING:
+    import pandas as pd
+
+from .builtin_schemas import (
+    get_schema_summary,
+    list_builtin_schemas,
+    load_builtin_schema,
+    save_schema_to_file,
+)
 from .generator import generate_mock_data
-
-from pymilvus import FieldSchema, CollectionSchema, DataType
-from pymilvus.bulk_writer import LocalBulkWriter, BulkFileType
+from .models import get_schema_help, validate_schema_data
+from .rich_display import (
+    display_error,
+    display_schema_details,
+    display_schema_list,
+    display_schema_validation,
+    display_success,
+)
+from .schema_manager import get_schema_manager
 
 _OUTPUT_FORMATS = {"parquet", "csv", "json", "npy"}
 
 
 @click.command(context_settings={"help_option_names": ["-h", "--help"]})
-@click.option("--schema", "schema_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), help="Path to schema JSON/YAML file.")
-@click.option("-i", "--interactive", is_flag=True, help="Launch interactive schema builder.")
-@click.option("--schema-out", "schema_out", type=click.Path(dir_okay=False, path_type=Path), help="Save interactive schema to file.")
-@click.option("--rows", "-r", default=1000, show_default=True, type=int, help="Number of rows to generate.")
-@click.option("-f", "--format", "output_format", default="parquet", show_default=True, type=click.Choice(sorted(_OUTPUT_FORMATS)), help="Output file format.")
-@click.option("-p", "--preview", is_flag=True, help="Print first 5 rows to terminal after generation.")
-@click.option("--out", "output_path", type=click.Path(dir_okay=False, path_type=Path), help="Output file path. Default: <collection_name>.<ext>")
+@click.option(
+    "--schema",
+    "schema_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Path to schema JSON/YAML file.",
+)
+@click.option(
+    "--rows",
+    "-r",
+    default=1000,
+    show_default=True,
+    type=int,
+    help="Number of rows to generate.",
+)
+@click.option(
+    "-f",
+    "--format",
+    "output_format",
+    default="parquet",
+    show_default=True,
+    type=click.Choice(sorted(_OUTPUT_FORMATS)),
+    help="Output file format.",
+)
+@click.option(
+    "-p",
+    "--preview",
+    is_flag=True,
+    help="Print first 5 rows to terminal after generation.",
+)
+@click.option(
+    "--out",
+    "output_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Output file path. Default: <collection_name>.<ext>",
+)
 @click.option("--seed", type=int, help="Random seed for reproducibility.")
+@click.option(
+    "--validate-only",
+    is_flag=True,
+    help="Only validate schema without generating data.",
+)
+@click.option(
+    "--schema-help", is_flag=True, help="Show schema format help and examples."
+)
+@click.option(
+    "--list-schemas", is_flag=True, help="List all available built-in schemas."
+)
+@click.option(
+    "--builtin",
+    "builtin_schema",
+    help="Use a built-in schema (e.g., 'ecommerce', 'documents').",
+)
+@click.option(
+    "--save-schema",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Save the schema to a file (use with --builtin).",
+)
+@click.option(
+    "--add-schema",
+    "add_schema",
+    help="Add a custom schema (format: 'schema_id:schema_file.json').",
+)
+@click.option(
+    "--show-schema",
+    "show_schema",
+    help="Show details of a schema (built-in or custom).",
+)
+@click.option(
+    "--list-all-schemas", is_flag=True, help="List all schemas (built-in and custom)."
+)
+@click.option("--remove-schema", "remove_schema", help="Remove a custom schema by ID.")
 def main(
     schema_path: Path | None,
-    interactive: bool,
-    schema_out: Path | None,
     rows: int,
     output_format: str,
     output_path: Path | None,
     seed: int | None,
     preview: bool = False,
+    validate_only: bool = False,
+    schema_help: bool = False,
+    list_schemas: bool = False,
+    builtin_schema: str | None = None,
+    save_schema: Path | None = None,
+    add_schema: str | None = None,
+    show_schema: str | None = None,
+    list_all_schemas: bool = False,
+    remove_schema: str | None = None,
 ) -> None:
     """Generate mock data from *schema_path* and write to disk using pandas or LocalBulkWriter."""
     # ------------------------------------------------------------------
-    # Prepare schema (file path) depending on interactive flag
+    # Handle special flags first
     # ------------------------------------------------------------------
-    if interactive:
-        if schema_path is not None:
-            click.echo("Cannot use --schema together with --interactive", err=True)
-            raise SystemExit(1)
-        schema_dict = _interactive_schema_builder()
-        if schema_out:
-            schema_out.write_text(json.dumps(schema_dict, indent=2), encoding="utf-8")
-            click.echo(f"Schema saved to {schema_out}")
-        # write to temp file for generator
-        with tempfile.NamedTemporaryFile("w+", suffix=".json", delete=False) as tmp:
-            json.dump(schema_dict, tmp)
-            tmp_path = Path(tmp.name)
-        schema_path = tmp_path
-    else:
-        if schema_path is None:
-            click.echo("--schema is required unless --interactive is used", err=True)
-            raise SystemExit(1)
+    if schema_help:
+        click.echo(get_schema_help())
+        return
+
+    if list_schemas:
+        schemas = list_builtin_schemas()
+        display_schema_list(schemas, "Available Built-in Schemas")
+        click.echo("\nFor detailed schema information: milvus-fake-data --show-schema <schema_id>")
+        return
+
+    if list_all_schemas:
+        manager = get_schema_manager()
+        all_schemas = manager.list_all_schemas()
+
+        # Separate built-in and custom schemas
+        builtin_schemas = {
+            k: v for k, v in all_schemas.items() if manager.is_builtin_schema(k)
+        }
+        custom_schemas = {
+            k: v for k, v in all_schemas.items() if not manager.is_builtin_schema(k)
+        }
+
+        if builtin_schemas:
+            display_schema_list(builtin_schemas, "Built-in Schemas")
+
+        if custom_schemas:
+            display_schema_list(custom_schemas, "Custom Schemas")
+
+        if not builtin_schemas and not custom_schemas:
+            click.echo("No schemas found.")
+
+        return
+
+    if show_schema:
+        manager = get_schema_manager()
+        try:
+            info = manager.get_schema_info(show_schema)
+            if not info:
+                display_error(
+                    f"Schema '{show_schema}' not found.",
+                    "Use --list-all-schemas to see available schemas."
+                )
+                raise SystemExit(1)
+
+            schema_data = manager.load_schema(show_schema)
+            is_builtin = manager.is_builtin_schema(show_schema)
+            
+            display_schema_details(show_schema, info, schema_data, is_builtin)
+
+        except Exception as e:
+            display_error(f"Error showing schema: {e}")
+            raise SystemExit(1) from e
+        return
+
+    if add_schema:
+        manager = get_schema_manager()
+        try:
+            # Parse schema_id:schema_file format
+            if ":" not in add_schema:
+                display_error(
+                    "Format should be: schema_id:schema_file.json",
+                    "Example: --add-schema my_schema:my_schema.json"
+                )
+                raise SystemExit(1)
+
+            schema_id, schema_file = add_schema.split(":", 1)
+            schema_path = Path(schema_file)
+
+            if not schema_path.exists():
+                display_error(f"Schema file not found: {schema_path}")
+                raise SystemExit(1)
+
+            # Load and validate schema
+            try:
+                import yaml
+
+                content = schema_path.read_text("utf-8")
+                if schema_path.suffix.lower() in {".yaml", ".yml"}:
+                    schema_data = yaml.safe_load(content)
+                else:
+                    schema_data = json.loads(content)
+            except Exception as e:
+                display_error(f"Error reading schema file: {e}")
+                raise SystemExit(1) from e
+
+            # Get additional info from user
+            description = click.prompt(
+                "Schema description (optional)", default="", show_default=False
+            )
+            use_cases_input = click.prompt(
+                "Use cases (comma-separated, optional)", default="", show_default=False
+            )
+            use_cases = (
+                [uc.strip() for uc in use_cases_input.split(",") if uc.strip()]
+                if use_cases_input
+                else []
+            )
+
+            manager.add_schema(schema_id, schema_data, description, use_cases)
+            
+            details = f"Description: {description or 'N/A'}\n"
+            details += f"Use cases: {', '.join(use_cases) if use_cases else 'N/A'}\n"
+            details += f"Usage: milvus-fake-data --show-schema {schema_id}"
+            
+            display_success(f"Added custom schema: {schema_id}", details)
+
+        except ValueError as e:
+            display_error(f"Error adding schema: {e}")
+            raise SystemExit(1) from e
+        except Exception as e:
+            display_error(f"Unexpected error: {e}")
+            raise SystemExit(1) from e
+        return
+
+    if remove_schema:
+        manager = get_schema_manager()
+        try:
+            if not manager.schema_exists(remove_schema):
+                display_error(f"Schema '{remove_schema}' does not exist.")
+                raise SystemExit(1)
+
+            if manager.is_builtin_schema(remove_schema):
+                display_error(f"Cannot remove built-in schema '{remove_schema}'.")
+                raise SystemExit(1)
+
+            if click.confirm(
+                f"Are you sure you want to remove schema '{remove_schema}'?"
+            ):
+                manager.remove_schema(remove_schema)
+                display_success(f"Removed custom schema: {remove_schema}")
+            else:
+                click.echo("Cancelled.")
+
+        except ValueError as e:
+            display_error(f"Error removing schema: {e}")
+            raise SystemExit(1) from e
+        except Exception as e:
+            display_error(f"Unexpected error: {e}")
+            raise SystemExit(1) from e
+        return
+
+    # ------------------------------------------------------------------
+    # Validate argument combinations
+    # ------------------------------------------------------------------
+    provided_args = [
+        ("--schema", schema_path is not None),
+        ("--builtin", builtin_schema is not None),
+    ]
+    provided_count = sum(provided for _, provided in provided_args)
+    if provided_count == 0:
+        click.echo("One of --schema or --builtin is required", err=True)
+        raise SystemExit(1)
+    if provided_count > 1:
+        provided_names = [name for name, provided in provided_args if provided]
+        click.echo(f"Cannot use {', '.join(provided_names)} together", err=True)
+        raise SystemExit(1)
+
+    # Handle built-in or custom schema
+    if builtin_schema:
+        manager = get_schema_manager()
+        try:
+            # Try to load from schema manager (supports both built-in and custom)
+            schema_data = manager.load_schema(builtin_schema)
+            schema_type = (
+                "built-in" if manager.is_builtin_schema(builtin_schema) else "custom"
+            )
+            click.echo(f"✓ Loaded {schema_type} schema: {builtin_schema}")
+
+            # Save schema to file if requested
+            if save_schema:
+                save_schema_to_file(schema_data, save_schema)
+                click.echo(f"✓ Schema saved to: {save_schema}")
+                return
+
+            # Create temporary file for the schema
+            with tempfile.NamedTemporaryFile("w+", suffix=".json", delete=False) as tmp:
+                json.dump(schema_data, tmp)
+                schema_path = Path(tmp.name)
+        except ValueError as e:
+            click.echo(f"✗ Error with schema: {e}", err=True)
+            click.echo("Available schemas:", err=True)
+            all_schemas = manager.list_all_schemas()
+            for schema_id in sorted(all_schemas.keys()):
+                schema_type = (
+                    "built-in" if manager.is_builtin_schema(schema_id) else "custom"
+                )
+                click.echo(f"  - {schema_id} ({schema_type})", err=True)
+            raise SystemExit(1) from e
+
+    # builtin_schema case is already handled above, schema_path is set
+
+    # Validate schema if --validate-only flag is used
+    if validate_only:
+        try:
+            import yaml
+            from pydantic import ValidationError
+
+            content = schema_path.read_text("utf-8")
+            if schema_path.suffix.lower() in {".yaml", ".yml"}:
+                schema_data = yaml.safe_load(content)
+            else:
+                schema_data = json.loads(content)
+
+            validated_schema = validate_schema_data(schema_data)
+            
+            # Prepare validation info for rich display
+            validation_info = {}
+            if isinstance(validated_schema, list):
+                validation_info["fields_count"] = len(validated_schema)
+                validation_info["fields"] = [
+                    {"name": field.name, "type": field.type, "is_primary": field.is_primary}
+                    for field in validated_schema
+                ]
+            else:
+                validation_info["collection_name"] = validated_schema.collection_name
+                validation_info["fields_count"] = len(validated_schema.fields)
+                validation_info["fields"] = [
+                    {"name": field.name, "type": field.type, "is_primary": field.is_primary}
+                    for field in validated_schema.fields
+                ]
+            
+            # Get schema ID for display
+            if schema_path:
+                schema_id = schema_path.stem
+            elif builtin_schema:
+                schema_id = builtin_schema
+            else:
+                schema_id = "schema"
+                
+            display_schema_validation(schema_id, validation_info)
+            return
+        except ValidationError as e:
+            click.echo("✗ Schema validation failed:", err=True)
+            for error in e.errors():
+                loc = " -> ".join(str(x) for x in error["loc"])
+                click.echo(f"  • {loc}: {error['msg']}", err=True)
+            click.echo(
+                f"\nFor help with schema format, run: {sys.argv[0]} --schema-help",
+                err=True,
+            )
+            raise SystemExit(1) from e
+        except Exception as e:
+            click.echo(f"✗ Error reading schema file: {e}", err=True)
+            raise SystemExit(1) from e
 
     df = generate_mock_data(schema_path, rows=rows, seed=seed)
 
@@ -76,7 +390,9 @@ def main(
         try:
             content = Path(schema_path).read_text("utf-8")
             data = json.loads(content)
-            collection_name: str | None = data.get("collection_name") if isinstance(data, dict) else None
+            collection_name: str | None = (
+                data.get("collection_name") if isinstance(data, dict) else None
+            )
         except Exception:
             data = {}
             collection_name = None
@@ -90,65 +406,21 @@ def main(
         click.echo(df)
 
 
-def _interactive_schema_builder() -> dict:
-    """Launch command-line prompts to build a schema dict."""
-    click.echo("\n=== Interactive Milvus Schema Builder ===")
-    collection_name = click.prompt("Collection name", default="my_collection")
-    fields: list[dict] = []
-    while True:
-        name = click.prompt("Field name")
-        type_choices = [
-            "Int8",
-            "Int16",
-            "Int32",
-            "Int64",
-            "Float",
-            "Double",
-            "Bool",
-            "VarChar",
-            "FloatVector",
-            "BinaryVector",
-            "Array",
-            "JSON",
-        ]
-        f_type = click.prompt("Field type", type=click.Choice(type_choices, case_sensitive=False))
-        field: dict = {"name": name, "type": f_type}
-        # extra properties
-        if click.confirm("Is primary key?", default=False):
-            field["is_primary"] = True
-            if click.confirm("Auto ID?", default=False):
-                field["auto_id"] = True
-        if click.confirm("Nullable?", default=False):
-            field["nullable"] = True
-        if f_type.lower() == "varchar":
-            field["max_length"] = click.prompt("Max length", type=int, default=128)
-        if "vector" in f_type.lower():
-            field["dim"] = click.prompt("Dimension (dim)", type=int, default=128)
-        if f_type.lower() == "array":
-            elem_type = click.prompt("Element type", type=click.Choice([t for t in type_choices if t != "Array"], case_sensitive=False))
-            field["element_type"] = elem_type
-            field["max_capacity"] = click.prompt("Max capacity", type=int, default=5)
-        fields.append(field)
-        if not click.confirm("Add another field?", default=True):
-            break
-    schema = {"collection_name": collection_name, "fields": fields}
-    click.echo("\nSchema preview:\n" + json.dumps(schema, indent=2))
-    if not click.confirm("Looks good?", default=True):
-        click.echo("Aborted.")
-        raise SystemExit(1)
-    return schema
-
-
-def _save_with_bulk_writer(df: pd.DataFrame, schema_path: Path, output_path: Path, fmt: str) -> None:
+def _save_with_bulk_writer(
+    df: pd.DataFrame, schema_path: Path, output_path: Path, fmt: str
+) -> None:
     """Save using Milvus LocalBulkWriter for ingestion-ready files."""
     # Build CollectionSchema from original schema file
-    import yaml  # type: ignore
+    import yaml
 
     schema_dict = yaml.safe_load(schema_path.read_text("utf-8"))
     fields = schema_dict.get("fields", schema_dict)
     col_fields = []
+
     # Build DataType mapping safely (not all enums exist in every version)
-    _maybe = lambda name: getattr(DataType, name, None)  # noqa: E731
+    def _maybe(name: str) -> DataType | None:
+        return getattr(DataType, name, None)
+
     dtype_map: dict[str, DataType] = {
         k: v
         for k, v in {
@@ -217,8 +489,6 @@ def _save_with_bulk_writer(df: pd.DataFrame, schema_path: Path, output_path: Pat
         generated = writer.batch_files[0][0]
         # Rename/move generated file to desired output_path
         os.replace(generated, output_path)
-
-
 
 
 if __name__ == "__main__":  # pragma: no cover

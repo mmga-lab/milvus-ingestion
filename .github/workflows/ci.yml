@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  PYTHON_DEFAULT_VERSION: "3.11"
+
+jobs:
+  test:
+    name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up PDM
+        uses: pdm-project/setup-pdm@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          pdm sync --dev
+
+      - name: Run tests with coverage
+        run: |
+          pdm run pytest --cov=src/milvus_fake_data --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == env.PYTHON_DEFAULT_VERSION && matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up PDM
+        uses: pdm-project/setup-pdm@v4
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT_VERSION }}
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          pdm sync --dev
+
+      - name: Run ruff linting
+        run: |
+          pdm run ruff check . --output-format=github
+
+      - name: Run ruff formatting check
+        run: |
+          pdm run ruff format --check .
+
+      - name: Run mypy type checking
+        run: |
+          pdm run mypy src/
+
+  build:
+    name: Build Package
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up PDM
+        uses: pdm-project/setup-pdm@v4
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT_VERSION }}
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          pdm sync
+
+      - name: Build package
+        run: |
+          pdm build
+
+      - name: Check package metadata
+        run: |
+          pdm run python -m twine check dist/*
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  cli-test:
+    name: CLI Integration Tests
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up PDM
+        uses: pdm-project/setup-pdm@v4
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT_VERSION }}
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          pdm sync
+
+      - name: Test CLI help
+        run: |
+          pdm run milvus-fake-data --help
+
+      - name: Test schema help
+        run: |
+          pdm run milvus-fake-data --schema-help
+
+      - name: Test schema validation
+        run: |
+          pdm run milvus-fake-data --schema my_schema.json --validate-only
+
+      - name: Test data generation
+        run: |
+          pdm run milvus-fake-data --schema my_schema.json --rows 10 --preview
+
+      - name: Test interactive mode (dry run)
+        run: |
+          echo -e "test_collection\nid\nInt64\ny\nn\nn\ny" | timeout 30 pdm run milvus-fake-data --interactive --rows 5 || true

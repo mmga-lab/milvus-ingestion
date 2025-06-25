@@ -24,17 +24,21 @@ Schema file format (JSON / YAML):
 If the top-level key `fields` is missing we assume the whole dict is already a
 list of fields.
 """
+
 from __future__ import annotations
 
 import json
 import random
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
-import yaml  # type: ignore
+import yaml
 from faker import Faker
+from pydantic import ValidationError
+
+from .models import get_schema_help, validate_schema_data
 
 faker = Faker()
 NULL_PROB = 0.1  # probability to generate null for nullable fields
@@ -44,7 +48,9 @@ NULL_PROB = 0.1  # probability to generate null for nullable fields
 # ---------------------------------------------------------------------------
 
 
-def generate_mock_data(schema_path: str | Path, rows: int = 1000, seed: int | None = None) -> pd.DataFrame:
+def generate_mock_data(
+    schema_path: str | Path, rows: int = 1000, seed: int | None = None
+) -> pd.DataFrame:
     """Generate mock data according to the schema described by *schema_path*.
 
     Args:
@@ -60,17 +66,44 @@ def generate_mock_data(schema_path: str | Path, rows: int = 1000, seed: int | No
         np.random.seed(seed)
         Faker.seed(seed)
 
-    schema = _load_schema(schema_path)
-    fields = schema.get("fields", schema)  # accept list-only schema
+    schema_data = _load_schema(schema_path)
+    try:
+        validated_schema = validate_schema_data(schema_data)
+        if isinstance(validated_schema, list):
+            # List of field schemas
+            fields = [
+                field.model_dump(exclude_none=True, exclude_unset=True)
+                for field in validated_schema
+            ]
+        else:
+            # Collection schema
+            fields = [
+                field.model_dump(exclude_none=True, exclude_unset=True)
+                for field in validated_schema.fields
+            ]
+    except ValidationError as e:
+        # Format validation errors with helpful messages
+        error_msg = "Schema validation failed:\n\n"
+        for error in e.errors():
+            loc = " -> ".join(str(x) for x in error["loc"])
+            error_msg += f"• {loc}: {error['msg']}\n"
+
+        error_msg += f"\n{get_schema_help()}"
+        raise ValueError(error_msg) from e
 
     # Generate rows one by one so we can respect nullable & auto_id handling
-    import time
-    base_ts = int(time.time() * 1000) << 18
+    if seed is not None:
+        # Use deterministic base for reproducible tests
+        base_ts = (seed * 1000) << 18
+    else:
+        import time
 
-    rows_data: list[Dict[str, Any]] = []
+        base_ts = int(time.time() * 1000) << 18
+
+    rows_data: list[dict[str, Any]] = []
     pk_field = next((f for f in fields if f.get("is_primary")), None)
     for idx in range(rows):
-        row: Dict[str, Any] = {}
+        row: dict[str, Any] = {}
         for f in fields:
             name = f["name"]
             f_type = f["type"].upper()
@@ -91,18 +124,20 @@ def generate_mock_data(schema_path: str | Path, rows: int = 1000, seed: int | No
 
     return pd.DataFrame(rows_data)
 
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _gen_pk_value(f_type: str, base_ts: int, idx: int):
+
+def _gen_pk_value(f_type: str, base_ts: int, idx: int) -> int | str:
     """Generate unique & monotonic primary key value."""
     if f_type == "INT64":
         return base_ts + idx
     return str(base_ts + idx)
 
 
-def _gen_value_by_field(field: Dict[str, Any]):
+def _gen_value_by_field(field: dict[str, Any]) -> Any:
     """Generate a random value matching field definition."""
     f_type = field["type"].upper()
     # Canonicalize vector type names like FLOATVECTOR -> FLOAT_VECTOR
@@ -133,27 +168,31 @@ def _gen_value_by_field(field: Dict[str, Any]):
     if f_type == "INT8_VECTOR":
         return np.random.randint(0, 256, dim).astype(np.int8).tolist()
     if f_type in {"FLOAT_VECTOR", "FLOAT16_VECTOR", "BFLOAT16_VECTOR"}:
-        dtype = np.float16 if f_type in {"FLOAT16_VECTOR", "BFLOAT16_VECTOR"} else np.float32
+        dtype = (
+            np.float16
+            if f_type in {"FLOAT16_VECTOR", "BFLOAT16_VECTOR"}
+            else np.float32
+        )
         return np.random.random(dim).astype(dtype).tolist()
     if f_type == "SPARSE_FLOAT_VECTOR":
         return np.random.randint(0, 2, dim).astype(np.int8).tolist()
     raise ValueError(f"Unsupported field type: {f_type}")
 
 
-def _load_schema(path: str | Path) -> Dict[str, Any]:
+def _load_schema(path: str | Path) -> dict[str, Any] | list[Any]:
+    """Load JSON or YAML schema file and return as dictionary."""
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(path)
 
     content = path.read_text(encoding="utf-8")
     if path.suffix.lower() in {".yaml", ".yml"}:
-        return yaml.safe_load(content)
+        return cast("dict[str, Any]", yaml.safe_load(content))
     elif path.suffix.lower() == ".json":
-        return json.loads(content)
+        return cast("dict[str, Any]", json.loads(content))
     else:
         # fallback: try json then yaml
         try:
-            return json.loads(content)
+            return cast("dict[str, Any]", json.loads(content))
         except json.JSONDecodeError:
-            return yaml.safe_load(content)
-
+            return cast("dict[str, Any]", yaml.safe_load(content))
