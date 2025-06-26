@@ -40,8 +40,8 @@ milvus-fake-data schema list
 # Generate data using a built-in schema
 milvus-fake-data generate --builtin simple --rows 1000 --preview
 
-# Generate e-commerce product data with output file
-milvus-fake-data generate --builtin ecommerce --rows 5000 --out products.parquet
+# Generate e-commerce product data to output directory
+milvus-fake-data generate --builtin ecommerce --rows 5000 --out products/
 ```
 
 **Available Built-in Schemas:**
@@ -86,6 +86,8 @@ Define your own collection structure with JSON or YAML:
 # Generate mock data from custom schema
 milvus-fake-data generate --schema my_schema.json --rows 1000 --format csv --preview
 ```
+
+**Note:** Output is always a directory containing data files (in the specified format) and a `meta.json` file with collection metadata.
 
 ### 3. Schema Management
 
@@ -257,7 +259,7 @@ milvus-fake-data clean [options]     # Utility commands
 | `--builtin SCHEMA_ID` | Use built-in or managed schema | `milvus-fake-data generate --builtin ecommerce` |
 | `--rows INTEGER` | Number of rows to generate | `milvus-fake-data generate --rows 5000` |
 | `--format FORMAT` | Output format (parquet, csv, json, npy) | `milvus-fake-data generate --format csv` |
-| `--out PATH` | Output file path | `milvus-fake-data generate --out data.parquet` |
+| `--out DIRECTORY` | Output directory path | `milvus-fake-data generate --out my_data/` |
 | `--preview` | Show first 5 rows | `milvus-fake-data generate --preview` |
 | `--seed INTEGER` | Random seed for reproducibility | `milvus-fake-data generate --seed 42` |
 | `--validate-only` | Validate schema without generating | `milvus-fake-data generate --validate-only` |
@@ -291,13 +293,13 @@ milvus-fake-data clean [options]     # Utility commands
 milvus-fake-data generate --builtin simple --rows 1000 --preview
 
 # Generate large dataset with custom format
-milvus-fake-data generate --builtin ecommerce --rows 100000 --format csv --out products.csv
+milvus-fake-data generate --builtin ecommerce --rows 100000 --format csv --out products/
 
 # Test custom schema
 milvus-fake-data generate --schema my_schema.json --validate-only
 
 # Reproducible data generation
-milvus-fake-data generate --builtin users --rows 5000 --seed 42 --out users.parquet
+milvus-fake-data generate --builtin users --rows 5000 --seed 42 --out users/
 
 # Schema management workflow
 milvus-fake-data schema list
