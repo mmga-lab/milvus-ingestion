@@ -243,7 +243,7 @@ class TestSchemaManagerCLI:
     def test_list_all_schemas_command(self):
         """Test --list-schemas command."""
         runner = CliRunner()
-        result = runner.invoke(main, ["--list-schemas"])
+        result = runner.invoke(main, ["schema", "list"])
 
         assert result.exit_code == 0
         assert "Built-in Schemas" in result.output
@@ -253,7 +253,7 @@ class TestSchemaManagerCLI:
     def test_show_schema_builtin(self):
         """Test --show-schema with built-in schema."""
         runner = CliRunner()
-        result = runner.invoke(main, ["--show-schema", "simple"])
+        result = runner.invoke(main, ["schema", "show", "simple"])
 
         assert result.exit_code == 0
         assert "Schema: simple (Built-in)" in result.output
@@ -263,7 +263,7 @@ class TestSchemaManagerCLI:
     def test_show_schema_not_found(self):
         """Test --show-schema with non-existent schema."""
         runner = CliRunner()
-        result = runner.invoke(main, ["--show-schema", "nonexistent"])
+        result = runner.invoke(main, ["schema", "show", "nonexistent"])
 
         assert result.exit_code == 1
         assert "not found" in result.output
@@ -292,7 +292,7 @@ class TestSchemaManagerCLI:
 
                 result = runner.invoke(
                     main,
-                    ["--add-schema", f"my_custom:{schema_file}"],
+                    ["schema", "add", "my_custom", str(schema_file)],
                     input="\n".join(inputs),
                 )
 
@@ -306,20 +306,19 @@ class TestSchemaManagerCLI:
                 reset_schema_manager()
 
     def test_add_schema_invalid_format(self):
-        """Test --add-schema with invalid format."""
+        """Test schema add with invalid file."""
         runner = CliRunner()
-        result = runner.invoke(main, ["--add-schema", "invalid_format"])
+        result = runner.invoke(main, ["schema", "add", "test_schema", "nonexistent.json"])
 
-        assert result.exit_code == 1
-        assert "Format should be: schema_id:schema_file.json" in result.output
+        assert result.exit_code != 0
 
     def test_add_schema_file_not_found(self):
         """Test --add-schema with non-existent file."""
         runner = CliRunner()
-        result = runner.invoke(main, ["--add-schema", "test:/nonexistent/file.json"])
+        result = runner.invoke(main, ["schema", "add", "test", "/nonexistent/file.json"])
 
-        assert result.exit_code == 1
-        assert "Schema file not found" in result.output
+        assert result.exit_code != 0
+        assert "does not exist" in result.output
 
     def test_remove_schema_command(self, sample_custom_schema):
         """Test --remove-schema command."""
@@ -340,14 +339,14 @@ class TestSchemaManagerCLI:
                 # Add schema
                 result = runner.invoke(
                     main,
-                    ["--add-schema", f"test_remove:{schema_file}"],
+                    ["schema", "add", "test_remove", str(schema_file)],
                     input="Test schema\ntesting",
                 )
                 assert result.exit_code == 0
 
                 # Remove schema
                 result = runner.invoke(
-                    main, ["--remove-schema", "test_remove"], input="y"
+                    main, ["schema", "remove", "test_remove"], input="y"
                 )  # Confirm removal
 
                 assert result.exit_code == 0
@@ -361,7 +360,7 @@ class TestSchemaManagerCLI:
     def test_remove_schema_not_found(self):
         """Test --remove-schema with non-existent schema."""
         runner = CliRunner()
-        result = runner.invoke(main, ["--remove-schema", "nonexistent"])
+        result = runner.invoke(main, ["schema", "remove", "nonexistent"])
 
         assert result.exit_code == 1
         assert "does not exist" in result.output
@@ -369,7 +368,7 @@ class TestSchemaManagerCLI:
     def test_remove_builtin_schema(self):
         """Test --remove-schema with built-in schema."""
         runner = CliRunner()
-        result = runner.invoke(main, ["--remove-schema", "simple"])
+        result = runner.invoke(main, ["schema", "remove", "simple"])
 
         assert result.exit_code == 1
         assert "Cannot remove built-in schema" in result.output
@@ -393,7 +392,7 @@ class TestSchemaManagerCLI:
                 # Add custom schema
                 result = runner.invoke(
                     main,
-                    ["--add-schema", f"my_custom_test:{schema_file}"],
+                    ["schema", "add", "my_custom_test", str(schema_file)],
                     input="Custom schema\ntesting",
                 )
                 assert result.exit_code == 0, (
@@ -404,6 +403,7 @@ class TestSchemaManagerCLI:
                 result = runner.invoke(
                     main,
                     [
+                        "generate",
                         "--builtin",
                         "my_custom_test",
                         "--rows",
@@ -444,13 +444,13 @@ class TestSchemaManagerCLI:
                 # Add custom schema
                 result = runner.invoke(
                     main,
-                    ["--add-schema", f"my_custom_show:{schema_file}"],
+                    ["schema", "add", "my_custom_show", str(schema_file)],
                     input="Custom test schema\ntesting, example",
                 )
                 assert result.exit_code == 0
 
                 # Show custom schema
-                result = runner.invoke(main, ["--show-schema", "my_custom_show"])
+                result = runner.invoke(main, ["schema", "show", "my_custom_show"])
 
                 assert result.exit_code == 0
                 assert "Schema: my_custom_show (Custom)" in result.output

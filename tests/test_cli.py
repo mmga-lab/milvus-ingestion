@@ -38,7 +38,7 @@ def test_cli_basic_usage(cli_runner, sample_schema):
 
         result = cli_runner.invoke(
             main,
-            ["--schema", str(schema_path), "--rows", "5", "--seed", "42"],
+            ["generate", "--schema", str(schema_path), "--rows", "5", "--seed", "42"],
             input="y\n",
         )
 
@@ -86,6 +86,7 @@ def test_cli_csv_output(cli_runner, sample_schema):
         result = cli_runner.invoke(
             main,
             [
+                "generate",
                 "--schema",
                 str(schema_path),
                 "--rows",
@@ -127,7 +128,16 @@ def test_cli_preview_option(cli_runner, sample_schema):
 
         result = cli_runner.invoke(
             main,
-            ["--schema", str(schema_path), "--rows", "2", "--preview", "--seed", "42"],
+            [
+                "generate",
+                "--schema",
+                str(schema_path),
+                "--rows",
+                "2",
+                "--preview",
+                "--seed",
+                "42",
+            ],
         )
 
         if result.exit_code != 0:
@@ -148,7 +158,7 @@ def test_cli_preview_option(cli_runner, sample_schema):
 
 def test_cli_missing_schema(cli_runner):
     """Test error when schema is missing."""
-    result = cli_runner.invoke(main, ["--rows", "1"])
+    result = cli_runner.invoke(main, ["generate", "--rows", "1"])
 
     assert result.exit_code == 1
     assert "One of --schema or --builtin is required" in result.output
@@ -157,7 +167,7 @@ def test_cli_missing_schema(cli_runner):
 def test_cli_nonexistent_schema(cli_runner):
     """Test error for non-existent schema file."""
     result = cli_runner.invoke(
-        main, ["--schema", "/non/existent/file.json", "--rows", "1"]
+        main, ["generate", "--schema", "/non/existent/file.json", "--rows", "1"]
     )
 
     assert result.exit_code != 0

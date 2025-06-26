@@ -39,11 +39,7 @@ pdm publish       # Publish to PyPI (requires PDM_PUBLISH_TOKEN)
 # Install in development mode first
 pdm install
 
-# Test the CLI (backward compatible - defaults to generate command)
-milvus-fake-data --builtin simple --rows 100 --preview
-milvus-fake-data --schema example_schema.json --rows 1000
-
-# New grouped CLI structure
+# Data generation commands
 milvus-fake-data generate --builtin simple --rows 100 --preview
 milvus-fake-data generate --schema example_schema.json --rows 1000
 
@@ -61,7 +57,7 @@ milvus-fake-data clean                         # Clean up generated files
 ## Architecture Overview
 
 ### Core Modules
-- **cli.py**: Command-line interface with Click groups, provides both backward compatibility and new grouped structure for better organization
+- **cli.py**: Command-line interface with Click groups, provides clean grouped structure for better organization
 - **generator.py**: Core data generation logic, takes schema files and produces pandas DataFrames with mock data
 - **models.py**: Pydantic models for schema validation with comprehensive error messages
 - **schema_manager.py**: Manages custom and built-in schemas, stores user schemas in ~/.milvus-fake-data/schemas

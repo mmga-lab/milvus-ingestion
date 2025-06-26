@@ -2,14 +2,16 @@
 
 Usage::
 
-    # Backward compatible (defaults to generate command)
-    milvus-fake-data --schema schema.json --rows 1000  # default parquet
-    milvus-fake-data --builtin simple --rows 100 --preview
-
-    # New grouped structure
+    # Data generation
     milvus-fake-data generate --schema schema.json --rows 1000
+    milvus-fake-data generate --builtin simple --rows 100 --preview
+
+    # Schema management
     milvus-fake-data schema list
     milvus-fake-data schema show simple
+    milvus-fake-data schema add my_schema schema.json
+
+    # Utilities
     milvus-fake-data clean --yes
 
 The script is installed as ``milvus-fake-data`` when the package is
@@ -62,101 +64,16 @@ _OUTPUT_FORMATS = {"parquet", "csv", "json", "npy"}
 DEFAULT_DATA_DIR = Path.home() / ".milvus-fake-data" / "data"
 
 
-@click.group(
-    context_settings={"help_option_names": ["-h", "--help"]},
-    invoke_without_command=True,
-)
+@click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.option(
     "--verbose",
     "-v",
     is_flag=True,
     help="Enable verbose logging with detailed debug information.",
 )
-# Add generate command options here to make them available at the top level
-@click.option(
-    "--schema",
-    "schema_path",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Path to schema JSON/YAML file.",
-)
-@click.option(
-    "--builtin",
-    "builtin_schema",
-    help="Use a built-in schema (e.g., 'ecommerce', 'documents').",
-)
-@click.option(
-    "--rows",
-    "-r",
-    default=1000,
-    show_default=True,
-    type=int,
-    help="Number of rows to generate.",
-)
-@click.option(
-    "-f",
-    "--format",
-    "output_format",
-    default="parquet",
-    show_default=True,
-    type=click.Choice(sorted(_OUTPUT_FORMATS)),
-    help="Output file format.",
-)
-@click.option(
-    "-p",
-    "--preview",
-    is_flag=True,
-    help="Print first 5 rows to terminal after generation.",
-)
-@click.option(
-    "--out",
-    "output_path",
-    type=click.Path(file_okay=False, path_type=Path),
-    help="Output directory path (will create directory with data files + meta.json). Default: <collection_name>/",
-)
-@click.option("--seed", type=int, help="Random seed for reproducibility.")
-@click.option(
-    "--validate-only",
-    is_flag=True,
-    help="Only validate schema without generating data.",
-)
-@click.option(
-    "--no-progress",
-    is_flag=True,
-    help="Disable progress bar display for large datasets.",
-)
-@click.option(
-    "--batch-size",
-    "batch_size",
-    default=10000,
-    show_default=True,
-    type=int,
-    help="Number of rows to generate and process in each batch for memory efficiency.",
-)
-@click.option(
-    "--yes",
-    "-y",
-    is_flag=True,
-    help="Auto-confirm all prompts and proceed without interactive confirmation.",
-)
-@click.option(
-    "--chunk-size",
-    "chunk_size_mb",
-    default=128,
-    show_default=True,
-    type=int,
-    help="Chunk size in MB for LocalBulkWriter segments.",
-)
-@click.option(
-    "--force",
-    is_flag=True,
-    help="Force overwrite output directory if it exists.",
-)
 @click.pass_context
-def main(ctx: click.Context, verbose: bool = False, **kwargs: Any) -> None:
-    """Generate mock data for Milvus with schema management.
-
-    If no subcommand is specified, this will generate data using the provided options.
-    """
+def main(ctx: click.Context, verbose: bool = False) -> None:
+    """Generate mock data for Milvus with schema management."""
     # Setup logging first
     setup_logging(verbose=verbose, log_level="DEBUG" if verbose else "INFO")
     logger = get_logger(__name__)
@@ -169,26 +86,6 @@ def main(ctx: click.Context, verbose: bool = False, **kwargs: Any) -> None:
         "Starting milvus-fake-data CLI",
         extra={"verbose": verbose},
     )
-
-    # If no subcommand was invoked, run the generate command
-    if ctx.invoked_subcommand is None:
-        # Filter kwargs to only include generate command parameters
-        generate_params = {
-            "schema_path": kwargs.get("schema_path"),
-            "builtin_schema": kwargs.get("builtin_schema"),
-            "rows": kwargs.get("rows", 1000),
-            "output_format": kwargs.get("output_format", "parquet"),
-            "output_path": kwargs.get("output_path"),
-            "seed": kwargs.get("seed"),
-            "preview": kwargs.get("preview", False),
-            "validate_only": kwargs.get("validate_only", False),
-            "no_progress": kwargs.get("no_progress", False),
-            "batch_size": kwargs.get("batch_size", 10000),
-            "yes": kwargs.get("yes", False),
-            "chunk_size_mb": kwargs.get("chunk_size_mb", 128),
-            "force": kwargs.get("force", False),
-        }
-        ctx.invoke(generate, **generate_params)
 
 
 @main.command()

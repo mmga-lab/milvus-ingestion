@@ -131,7 +131,7 @@ def test_generate_data_from_builtin_schemas():
 def test_cli_list_schemas():
     """Test CLI command to list schemas."""
     runner = CliRunner()
-    result = runner.invoke(main, ["--list-schemas"])
+    result = runner.invoke(main, ["schema", "list"])
 
     assert result.exit_code == 0
     assert "Built-in Schemas" in result.output
@@ -148,6 +148,7 @@ def test_cli_builtin_schema_generation():
         result = runner.invoke(
             main,
             [
+                "generate",
                 "--builtin",
                 "simple",
                 "--rows",
@@ -172,7 +173,7 @@ def test_cli_invalid_builtin_schema():
     """Test CLI with invalid built-in schema."""
     runner = CliRunner()
 
-    result = runner.invoke(main, ["--builtin", "nonexistent", "--rows", "1"])
+    result = runner.invoke(main, ["generate", "--builtin", "nonexistent", "--rows", "1"])
 
     assert result.exit_code == 1
     assert "✗ Error with schema" in result.output
@@ -190,7 +191,7 @@ def test_cli_conflicting_arguments():
 
     try:
         result = runner.invoke(
-            main, ["--schema", str(schema_file), "--builtin", "simple"]
+            main, ["generate", "--schema", str(schema_file), "--builtin", "simple"]
         )
         assert result.exit_code == 1
         assert "Cannot use" in result.output
@@ -202,7 +203,7 @@ def test_cli_validate_builtin_schema():
     """Test CLI validation with built-in schema."""
     runner = CliRunner()
 
-    result = runner.invoke(main, ["--builtin", "simple", "--validate-only"])
+    result = runner.invoke(main, ["generate", "--builtin", "simple", "--validate-only"])
 
     assert result.exit_code == 0
     assert "✓ Loaded built-in schema: simple" in result.output
