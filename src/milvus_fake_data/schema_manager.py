@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .builtin_schemas import get_schema_info, list_builtin_schemas, load_builtin_schema
+from .logging_config import get_logger
 from .models import validate_schema_data
 
 
@@ -18,6 +19,8 @@ class SchemaManager:
         Args:
             schema_dir: Directory to store custom schemas. Defaults to ~/.milvus-fake-data/schemas
         """
+        self.logger = get_logger(__name__)
+
         if schema_dir is None:
             # Allow override via environment variable for testing
             env_path = os.environ.get("MILVUS_FAKE_DATA_SCHEMA_DIR")
@@ -28,18 +31,29 @@ class SchemaManager:
 
         self.schema_dir = Path(schema_dir)
         self.schema_dir.mkdir(parents=True, exist_ok=True)
+        self.logger.debug("Schema manager initialized", schema_dir=str(self.schema_dir))
 
         # Create metadata file if it doesn't exist
         self.metadata_file = self.schema_dir / "metadata.json"
         if not self.metadata_file.exists():
             self._save_metadata({})
+            self.logger.debug(
+                "Created new metadata file", metadata_file=str(self.metadata_file)
+            )
 
     def _load_metadata(self) -> dict[str, Any]:
         """Load schema metadata."""
         try:
             with open(self.metadata_file, encoding="utf-8") as f:
-                return json.load(f)  # type: ignore[no-any-return]
-        except (FileNotFoundError, json.JSONDecodeError):
+                metadata: dict[str, Any] = json.load(f)
+                self.logger.debug(
+                    "Metadata loaded successfully", schema_count=len(metadata)
+                )
+                return metadata
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            self.logger.warning(
+                "Failed to load metadata, returning empty dict", error=str(e)
+            )
             return {}
 
     def _save_metadata(self, metadata: dict[str, Any]) -> None:

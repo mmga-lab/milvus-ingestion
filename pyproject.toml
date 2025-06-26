@@ -27,6 +27,7 @@ dependencies = [
     "pymilvus[bulk_writer]",
     "pydantic>=2.0.0",
     "rich>=13.0.0",
+    "loguru>=0.7.3",
 ]
 requires-python = ">=3.10"
 readme = "README.md"

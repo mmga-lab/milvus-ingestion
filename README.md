@@ -1,20 +1,19 @@
-# milvus-fake-data
+# Milvus Fake Data Generator
 
-A Python tool for generating mock data for Milvus collections based on schema definitions. This tool helps developers create realistic test data for Milvus vector databases quickly and efficiently.
+A powerful Python tool for generating realistic mock data for Milvus vector databases. Create test data quickly and efficiently using schema definitions, with support for all Milvus field types and built-in schemas for common use cases.
 
-## Features
+## ✨ Key Features
 
-- 🎯 **Built-in schemas** for common use cases (e-commerce, documents, images, users, etc.)
-- 📚 **Custom schema management** - Add, show, list, and remove your own schemas
-- 🚀 Generate mock data from JSON/YAML schema files
-- 🔧 Support for all Milvus field types (Int8, Int16, Int32, Int64, Float, Double, Bool, VarChar, FloatVector, BinaryVector, Array, JSON)
-- ✅ **Pydantic-based schema validation** with helpful error messages
-- 📊 Multiple output formats (Parquet, CSV, JSON, NumPy)
-- 🌱 Reproducible data generation with seed support
-- 📦 Milvus-ready bulk writer integration
-- 🎨 Customizable field constraints and properties
-- 🔍 Schema validation and help commands
-- 🏠 **Unified schema access** - Use custom schemas just like built-in ones
+- 🎯 **Ready-to-use schemas** - Pre-built schemas for e-commerce, documents, images, users, news, and videos
+- 📚 **Schema management** - Add, organize, and reuse custom schemas with metadata
+- 🚀 **Flexible generation** - Support for JSON/YAML schema files with comprehensive field types
+- 🔧 **Complete Milvus support** - All field types including vectors, arrays, JSON, and primitive types
+- ✅ **Smart validation** - Pydantic-based validation with detailed error messages and suggestions
+- 📊 **Multiple formats** - Output as Parquet, CSV, JSON, or NumPy arrays
+- 🌱 **Reproducible results** - Seed support for consistent data generation
+- 🎨 **Rich customization** - Field constraints, nullable fields, auto-generated IDs
+- 🔍 **Schema exploration** - Validation, help commands, and schema details
+- 🏠 **Unified interface** - Use custom and built-in schemas interchangeably
 
 ## Installation
 
@@ -28,9 +27,9 @@ cd milvus-fake-data
 pdm install
 ```
 
-## Quick Start
+## 🚀 Quick Start
 
-### Option 1: Use Built-in Schemas (Recommended)
+### 1. Use Built-in Schemas (Recommended)
 
 Get started instantly with pre-built schemas for common use cases:
 
@@ -39,27 +38,29 @@ Get started instantly with pre-built schemas for common use cases:
 milvus-fake-data --list-schemas
 
 # Generate data using a built-in schema
-milvus-fake-data --builtin simple --rows 1000
+milvus-fake-data --builtin simple --rows 1000 --preview
 
-# Generate e-commerce product data
-milvus-fake-data --builtin ecommerce --rows 5000 --preview
+# Generate e-commerce product data with output file
+milvus-fake-data --builtin ecommerce --rows 5000 --out products.parquet
 
 # Save a built-in schema for customization
 milvus-fake-data --builtin documents --save-schema my_documents.json
 ```
 
-Available built-in schemas:
-- **simple** - Basic example with common field types
-- **ecommerce** - Product catalog with search embeddings  
-- **documents** - Document search with semantic embeddings
-- **images** - Image gallery with visual similarity
-- **users** - User profiles with behavioral embeddings
-- **videos** - Video library with multimodal embeddings
-- **news** - News articles with sentiment analysis
+**Available Built-in Schemas:**
+| Schema | Description | Use Cases |
+|--------|-------------|-----------|
+| `simple` | Basic example with common field types | Learning, testing |
+| `ecommerce` | Product catalog with search embeddings | Online stores, recommendations |
+| `documents` | Document search with semantic embeddings | Knowledge bases, document search |
+| `images` | Image gallery with visual similarity | Media platforms, image search |
+| `users` | User profiles with behavioral embeddings | User analytics, personalization |
+| `videos` | Video library with multimodal embeddings | Video platforms, content discovery |
+| `news` | News articles with sentiment analysis | News aggregation, content analysis |
 
-### Option 2: Create a Custom Schema File
+### 2. Create Custom Schemas
 
-Create a JSON or YAML file describing your Milvus collection schema:
+Define your own collection structure with JSON or YAML:
 
 ```json
 {
@@ -84,51 +85,30 @@ Create a JSON or YAML file describing your Milvus collection schema:
 }
 ```
 
-### Option 3: Generate Mock Data from Custom Schema
-
 ```bash
-# Generate 1000 rows of mock data
-milvus-fake-data --schema my_schema.json --rows 1000
-
-# Generate CSV format with preview
-milvus-fake-data --schema my_schema.json --rows 500 -f csv --preview
+# Generate mock data from custom schema
+milvus-fake-data --schema my_schema.json --rows 1000 --format csv --preview
 ```
 
-### Option 4: Manage Custom Schemas
+### 3. Schema Management
 
-Store and reuse your own schemas for consistent data generation:
+Store and organize your schemas for reuse:
 
 ```bash
-# Create a custom schema file
-cat > my_product_schema.json << 'EOF'
-{
-  "collection_name": "products",
-  "fields": [
-    {"name": "id", "type": "Int64", "is_primary": true},
-    {"name": "name", "type": "VarChar", "max_length": 200},
-    {"name": "category", "type": "VarChar", "max_length": 50},
-    {"name": "price", "type": "Float", "min": 1.0, "max": 1000.0},
-    {"name": "description_embedding", "type": "FloatVector", "dim": 384}
-  ]
-}
-EOF
+# Add a custom schema to your library
+milvus-fake-data --add-schema my_products:product_schema.json
 
-# Add it to your schema library
-milvus-fake-data --add-schema my_products:my_product_schema.json
-# Enter description: "Custom product catalog schema"
-# Enter use cases: "e-commerce, testing"
-
-# List all your schemas (built-in + custom)
+# List all schemas (built-in + custom)
 milvus-fake-data --list-all-schemas
 
 # Use your custom schema like a built-in one
-milvus-fake-data --builtin my_products --rows 1000 --preview
+milvus-fake-data --builtin my_products --rows 1000
 
-# Show detailed information about any schema
+# Show detailed schema information
 milvus-fake-data --show-schema my_products
 ```
 
-### Option 5: Use in Python Code
+### 4. Python API
 
 ```python
 from milvus_fake_data.generator import generate_mock_data
@@ -169,168 +149,221 @@ manager.add_schema("my_custom", custom_schema, "Custom schema", ["testing"])
 print("Added custom schema!")
 ```
 
-## Schema Format
+## 📋 Schema Reference
 
 ### Supported Field Types
 
 | Type | Description | Required Parameters | Optional Parameters |
 |------|-------------|-------------------|-------------------|
+| **Numeric Types** | | | |
 | `Int8`, `Int16`, `Int32`, `Int64` | Integer types | - | `min`, `max` |
 | `Float`, `Double` | Floating point | - | `min`, `max` |
-| `Bool` | Boolean | - | - |
-| `VarChar` | Variable length string | `max_length` | - |
-| `JSON` | JSON object | - | - |
-| `FloatVector` | Float vector | `dim` | - |
-| `BinaryVector` | Binary vector | `dim` | - |
-| `Array` | Array type | `element_type`, `max_capacity` | - |
+| `Bool` | Boolean values | - | - |
+| **Text Types** | | | |
+| `VarChar`, `String` | Variable length string | `max_length` | - |
+| `JSON` | JSON objects | - | - |
+| **Vector Types** | | | |
+| `FloatVector` | 32-bit float vectors | `dim` | - |
+| `BinaryVector` | Binary vectors | `dim` | - |
+| `Float16Vector` | 16-bit float vectors | `dim` | - |
+| `BFloat16Vector` | Brain float vectors | `dim` | - |
+| `Int8Vector` | 8-bit integer vectors | `dim` | - |
+| `SparseFloatVector` | Sparse float vectors | `dim` | - |
+| **Complex Types** | | | |
+| `Array` | Array of elements | `element_type`, `max_capacity` | `max_length` (for string elements) |
 
 ### Field Properties
 
-- `is_primary`: Mark field as primary key
-- `auto_id`: Auto-generate primary key values
-- `nullable`: Allow null values (10% probability)
+| Property | Description | Applicable Types |
+|----------|-------------|------------------|
+| `is_primary` | Mark field as primary key (exactly one required) | All types |
+| `auto_id` | Auto-generate ID values | Int64 primary keys only |
+| `nullable` | Allow null values (10% probability) | All types |
+| `min`, `max` | Value constraints | Numeric types |
+| `max_length` | String/element length limit | String and Array types |
+| `dim` | Vector dimension (1-32768) | Vector types |
+| `element_type` | Array element type | Array type |
+| `max_capacity` | Array capacity (1-4096) | Array type |
 
-### Example Schema
+### Complete Example
 
 ```yaml
-collection_name: "product_catalog"
+collection_name: "advanced_catalog"
 fields:
-  - name: "product_id"
+  # Primary key with auto-generated IDs
+  - name: "id"
     type: "Int64"
     is_primary: true
+    auto_id: true
   
+  # Text fields with constraints
   - name: "title"
     type: "VarChar"
     max_length: 200
-    nullable: false
   
+  - name: "description"
+    type: "VarChar"
+    max_length: 1000
+    nullable: true
+  
+  # Numeric fields with ranges
   - name: "price"
     type: "Float"
     min: 0.01
     max: 9999.99
   
-  - name: "features"
-    type: "FloatVector"
-    dim: 256
+  - name: "rating"
+    type: "Int8"
+    min: 1
+    max: 5
   
+  # Vector for semantic search
+  - name: "embedding"
+    type: "FloatVector"
+    dim: 768
+  
+  # Array of tags
   - name: "tags"
     type: "Array"
     element_type: "VarChar"
     max_capacity: 10
+    max_length: 50
   
+  # Structured metadata
   - name: "metadata"
     type: "JSON"
     nullable: true
+  
+  # Boolean flags
+  - name: "in_stock"
+    type: "Bool"
 ```
 
-## CLI Reference
+## 📚 CLI Reference
+
+### Core Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `--schema PATH` | Generate from custom schema file | `--schema my_schema.json` |
+| `--builtin SCHEMA_ID` | Use built-in or managed schema | `--builtin ecommerce` |
+| `--rows INTEGER` | Number of rows to generate | `--rows 5000` |
+| `--format FORMAT` | Output format (parquet, csv, json, npy) | `--format csv` |
+| `--out PATH` | Output file path | `--out data.parquet` |
+| `--preview` | Show first 5 rows | `--preview` |
+| `--seed INTEGER` | Random seed for reproducibility | `--seed 42` |
+
+### Schema Management
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `--list-schemas` | List built-in schemas | `--list-schemas` |
+| `--list-all-schemas` | List all schemas (built-in + custom) | `--list-all-schemas` |
+| `--show-schema SCHEMA_ID` | Show schema details | `--show-schema ecommerce` |
+| `--add-schema ID:FILE` | Add custom schema | `--add-schema products:schema.json` |
+| `--remove-schema SCHEMA_ID` | Remove custom schema | `--remove-schema products` |
+| `--save-schema PATH` | Save schema to file | `--save-schema schema.json` |
+
+### Validation & Help
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `--validate-only` | Validate schema without generating | `--validate-only` |
+| `--schema-help` | Show schema format help | `--schema-help` |
+| `--clean` | Clean up generated output files | `--clean` |
+| `--help` | Show help message | `--help` |
+
+### Common Usage Patterns
 
 ```bash
-milvus-fake-data [OPTIONS]
+# Quick start with built-in schema
+milvus-fake-data --builtin simple --rows 1000 --preview
 
-Options:
-  --schema PATH              Path to schema JSON/YAML file
-  --builtin SCHEMA_ID        Use built-in or custom schema
-  --list-schemas             List all available built-in schemas
-  --list-all-schemas         List all schemas (built-in and custom)
-  --save-schema PATH         Save schema to file (use with --builtin)
-  --add-schema ID:FILE       Add a custom schema (format: 'schema_id:schema_file.json')
-  --show-schema SCHEMA_ID    Show details of a schema (built-in or custom)
-  --remove-schema SCHEMA_ID  Remove a custom schema
-  --validate-only           Only validate schema without generating data
-  --schema-help             Show schema format help and examples
-  --rows INTEGER            Number of rows to generate [default: 1000]
-  -f, --format [parquet|csv|json|npy]  Output format [default: parquet]
-  -p, --preview             Print first 5 rows after generation
-  --out PATH                Output file path
-  --seed INTEGER            Random seed for reproducibility
-  -h, --help                Show help message
-```
+# Generate large dataset with custom format
+milvus-fake-data --builtin ecommerce --rows 100000 --format csv --out products.csv
 
-### Schema Management Commands
+# Test custom schema
+milvus-fake-data --schema my_schema.json --validate-only
 
-```bash
-# List built-in schemas only
-milvus-fake-data --list-schemas
+# Reproducible data generation
+milvus-fake-data --builtin users --rows 5000 --seed 42 --out users.parquet
 
-# List all schemas (built-in and custom)
+# Schema management workflow
 milvus-fake-data --list-all-schemas
-
-# Show details of any schema
 milvus-fake-data --show-schema ecommerce
-milvus-fake-data --show-schema my_custom_schema
+milvus-fake-data --save-schema ecommerce_base.json
+# Edit the file, then add as custom schema
+milvus-fake-data --add-schema my_ecommerce:ecommerce_base.json
 
-# Add a custom schema
-milvus-fake-data --add-schema my_schema:my_schema.json
-
-# Remove a custom schema
-milvus-fake-data --remove-schema my_schema
-
-# Generate data with built-in schema
-milvus-fake-data --builtin ecommerce --rows 1000
-
-# Generate data with custom schema
-milvus-fake-data --builtin my_custom_schema --rows 1000
-
-# Save any schema for customization
-milvus-fake-data --builtin news --save-schema news_schema.json
-
-# Validate any schema
-milvus-fake-data --builtin users --validate-only
+# Clean up generated output files
+milvus-fake-data --clean
 ```
 
-## Development
+## 🛠️ Development
 
-This project uses PDM for dependency management and follows Python best practices.
+This project uses PDM for dependency management and follows modern Python development practices.
 
 ### Setup Development Environment
 
 ```bash
-# Clone the repository
+# Clone and setup
 git clone https://github.com/your-org/milvus-fake-data.git
 cd milvus-fake-data
-
-# Install dependencies
-pdm install
+pdm install  # Install development dependencies
 ```
 
-### Code Quality
+### Development Workflow
 
 ```bash
-# Format code
-pdm run ruff format src tests
+# Code formatting and linting
+pdm run ruff format src tests    # Format code
+pdm run ruff check src tests     # Check linting
+pdm run mypy src                 # Type checking
 
-# Lint code
-pdm run ruff check src tests
-pdm run mypy src
+# Testing
+pdm run pytest                           # Run all tests
+pdm run pytest --cov=src --cov-report=html  # With coverage
+pdm run pytest tests/test_generator.py   # Specific test file
 
-# Run tests
-pdm run pytest
-pdm run pytest --cov=src tests/
+# Combined quality checks
+make lint test                   # Run linting and tests together
 ```
 
-### Running Tests
+### Project Structure
 
-```bash
-# Run all tests
-pdm run pytest
-
-# Run with coverage
-pdm run pytest --cov=src --cov-report=html
-
-# Run specific test file
-pdm run pytest tests/test_generator.py
+```
+src/milvus_fake_data/
+├── cli.py              # Command-line interface
+├── generator.py        # Core data generation logic
+├── models.py           # Pydantic validation models
+├── schema_manager.py   # Schema management system
+├── builtin_schemas.py  # Built-in schema definitions
+├── rich_display.py     # Terminal formatting
+├── logging_config.py   # Structured logging
+└── schemas/            # Built-in schema files
+    ├── simple.json
+    ├── ecommerce.json
+    └── ...
 ```
 
-## Contributing
+## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Run tests and ensure code quality checks pass
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
+We welcome contributions! Please follow these steps:
+
+1. **Fork** the repository
+2. **Create** a feature branch: `git checkout -b feature/amazing-feature`
+3. **Make** your changes with tests
+4. **Ensure** quality checks pass: `make lint test`
+5. **Commit** changes: `git commit -m 'Add amazing feature'`
+6. **Push** to branch: `git push origin feature/amazing-feature`
+7. **Open** a Pull Request
+
+### Contribution Guidelines
+
+- Add tests for new functionality
+- Update documentation for API changes
+- Follow existing code style (ruff + mypy)
+- Include helpful error messages for user-facing features
 
 ## License
 

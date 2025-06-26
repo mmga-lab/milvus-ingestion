@@ -30,14 +30,31 @@ from __future__ import annotations
 import json
 import random
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 import numpy as np
 import pandas as pd
 import yaml
 from faker import Faker
 from pydantic import ValidationError
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 
+from .logging_config import (
+    get_logger,
+    log_error_with_context,
+    log_performance,
+    log_schema_validation,
+)
 from .models import get_schema_help, validate_schema_data
 
 faker = Faker()
@@ -48,25 +65,46 @@ NULL_PROB = 0.1  # probability to generate null for nullable fields
 # ---------------------------------------------------------------------------
 
 
-def generate_mock_data(
-    schema_path: str | Path, rows: int = 1000, seed: int | None = None
-) -> pd.DataFrame:
-    """Generate mock data according to the schema described by *schema_path*.
+def generate_mock_data_batches(
+    schema_path: str | Path,
+    rows: int = 1000,
+    batch_size: int = 10000,
+    seed: int | None = None,
+    show_progress: bool = True,
+) -> Iterator[pd.DataFrame]:
+    """Generate mock data in batches to handle large datasets efficiently.
 
     Args:
         schema_path: Path to JSON or YAML schema file.
-        rows: Number of rows to generate.
+        rows: Total number of rows to generate.
+        batch_size: Number of rows per batch.
         seed: Optional random seed for reproducibility.
+        show_progress: Whether to display progress bar.
 
-    Returns:
-        A *pandas.DataFrame* containing mock data with *rows* rows.
+    Yields:
+        pandas.DataFrame containing batch_size rows (or fewer for last batch).
     """
+    import time
+
+    logger = get_logger(__name__)
+    start_time = time.time()
+
+    logger.info(
+        "Starting batch data generation",
+        schema_file=str(schema_path),
+        rows=rows,
+        batch_size=batch_size,
+        seed=seed,
+    )
+
     if seed is not None:
+        logger.debug("Setting random seeds", seed=seed)
         random.seed(seed)
         np.random.seed(seed)
         Faker.seed(seed)
 
     schema_data = _load_schema(schema_path)
+    logger.debug("Schema loaded successfully", schema_file=str(schema_path))
     try:
         validated_schema = validate_schema_data(schema_data)
         if isinstance(validated_schema, list):
@@ -75,23 +113,40 @@ def generate_mock_data(
                 field.model_dump(exclude_none=True, exclude_unset=True)
                 for field in validated_schema
             ]
+            schema_name = f"schema_from_{Path(schema_path).stem}"
+            fields_count = len(validated_schema)
         else:
             # Collection schema
             fields = [
                 field.model_dump(exclude_none=True, exclude_unset=True)
                 for field in validated_schema.fields
             ]
+            schema_name = validated_schema.collection_name or "unknown"
+            fields_count = len(validated_schema.fields)
+
+        log_schema_validation(schema_name, fields_count, "success")
+        logger.debug(
+            "Schema validation completed",
+            schema_name=schema_name,
+            fields_count=fields_count,
+        )
     except ValidationError as e:
         # Format validation errors with helpful messages
-        error_msg = "Schema validation failed:\n\n"
+        error_list = []
         for error in e.errors():
             loc = " -> ".join(str(x) for x in error["loc"])
-            error_msg += f"• {loc}: {error['msg']}\n"
+            error_list.append(f"{loc}: {error['msg']}")
 
+        log_schema_validation("unknown_schema", 0, "failed", error_list)
+        log_error_with_context(
+            e, {"schema_file": str(schema_path), "operation": "schema_validation"}
+        )
+        error_msg = "Schema validation failed:\n\n"
+        error_msg += "\n".join(f"• {err}" for err in error_list)
         error_msg += f"\n{get_schema_help()}"
         raise ValueError(error_msg) from e
 
-    # Generate rows one by one so we can respect nullable & auto_id handling
+    # Generate timestamp base for reproducible tests
     if seed is not None:
         # Use deterministic base for reproducible tests
         base_ts = (seed * 1000) << 18
@@ -100,29 +155,151 @@ def generate_mock_data(
 
         base_ts = int(time.time() * 1000) << 18
 
-    rows_data: list[dict[str, Any]] = []
     pk_field = next((f for f in fields if f.get("is_primary")), None)
-    for idx in range(rows):
-        row: dict[str, Any] = {}
-        for f in fields:
-            name = f["name"]
-            f_type = f["type"].upper()
-            # Skip auto_id fields
-            if f.get("auto_id"):
-                continue
-            # Primary key handling (monotonic unique)
-            if pk_field and name == pk_field["name"]:
-                row[name] = _gen_pk_value(f_type, base_ts, idx)
-                continue
-            # Nullable handling
-            if f.get("nullable") and random.random() < NULL_PROB:
-                row[name] = None
-                continue
-            # Generate value by type
-            row[name] = _gen_value_by_field(f)
-        rows_data.append(row)
+    total_batches = (rows + batch_size - 1) // batch_size
 
-    return pd.DataFrame(rows_data)
+    logger.info(
+        "Starting batch generation",
+        total_batches=total_batches,
+        pk_field=pk_field["name"] if pk_field else None,
+    )
+
+    # Show progress bar when enabled
+    if show_progress:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeRemainingColumn(),
+        ) as progress:
+            task = progress.add_task("Generating mock data...", total=rows)
+
+            for batch_idx in range(total_batches):
+                start_idx = batch_idx * batch_size
+                end_idx = min(start_idx + batch_size, rows)
+
+                rows_data: list[dict[str, Any]] = []
+                for idx in range(start_idx, end_idx):
+                    row: dict[str, Any] = {}
+                    for f in fields:
+                        name = f["name"]
+                        f_type = f["type"].upper()
+                        # Skip auto_id fields
+                        if f.get("auto_id"):
+                            continue
+                        # Primary key handling (monotonic unique)
+                        if pk_field and name == pk_field["name"]:
+                            row[name] = _gen_pk_value(f_type, base_ts, idx)
+                            continue
+                        # Nullable handling
+                        if f.get("nullable") and random.random() < NULL_PROB:
+                            row[name] = None
+                            continue
+                        # Generate value by type
+                        row[name] = _gen_value_by_field(f)
+                    rows_data.append(row)
+                    progress.update(task, advance=1)
+
+                logger.debug(
+                    "Batch generated",
+                    batch_idx=batch_idx + 1,
+                    batch_size=len(rows_data),
+                    start_idx=start_idx,
+                    end_idx=end_idx,
+                )
+                yield pd.DataFrame(rows_data)
+    else:
+        # Generate without progress bar when disabled
+        for batch_idx in range(total_batches):
+            start_idx = batch_idx * batch_size
+            end_idx = min(start_idx + batch_size, rows)
+
+            batch_rows_data: list[dict[str, Any]] = []
+            for idx in range(start_idx, end_idx):
+                batch_row: dict[str, Any] = {}
+                for f in fields:
+                    name = f["name"]
+                    f_type = f["type"].upper()
+                    # Skip auto_id fields
+                    if f.get("auto_id"):
+                        continue
+                    # Primary key handling (monotonic unique)
+                    if pk_field and name == pk_field["name"]:
+                        batch_row[name] = _gen_pk_value(f_type, base_ts, idx)
+                        continue
+                    # Nullable handling
+                    if f.get("nullable") and random.random() < NULL_PROB:
+                        batch_row[name] = None
+                        continue
+                    # Generate value by type
+                    batch_row[name] = _gen_value_by_field(f)
+                batch_rows_data.append(batch_row)
+
+            logger.debug(
+                "Batch generated (no progress)",
+                batch_idx=batch_idx + 1,
+                batch_size=len(batch_rows_data),
+            )
+            yield pd.DataFrame(batch_rows_data)
+
+    # Log performance metrics
+    total_time = time.time() - start_time
+    log_performance(
+        "generate_mock_data_batches",
+        total_time,
+        rows=rows,
+        batch_size=batch_size,
+        total_batches=total_batches,
+    )
+    logger.info(
+        "Batch generation completed",
+        total_rows=rows,
+        total_batches=total_batches,
+        duration_seconds=total_time,
+    )
+
+
+def generate_mock_data(
+    schema_path: str | Path,
+    rows: int = 1000,
+    seed: int | None = None,
+    show_progress: bool = True,
+) -> pd.DataFrame:
+    """Generate mock data according to the schema described by *schema_path*.
+
+    Args:
+        schema_path: Path to JSON or YAML schema file.
+        rows: Number of rows to generate.
+        seed: Optional random seed for reproducibility.
+        show_progress: Whether to display progress bar for large datasets.
+
+    Returns:
+        A *pandas.DataFrame* containing mock data with *rows* rows.
+    """
+    # For backward compatibility, use batch generation and concatenate results
+    batches = list(
+        generate_mock_data_batches(
+            schema_path,
+            rows=rows,
+            batch_size=10000,
+            seed=seed,
+            show_progress=show_progress,
+        )
+    )
+
+    if not batches:
+        # Return empty DataFrame with correct columns if no data
+        schema_data = _load_schema(schema_path)
+        validated_schema = validate_schema_data(schema_data)
+        if isinstance(validated_schema, list):
+            fields = validated_schema
+        else:
+            fields = validated_schema.fields
+        columns = [f.name for f in fields if not f.auto_id]
+        return pd.DataFrame(columns=columns)
+
+    return pd.concat(batches, ignore_index=True)
 
 
 # ---------------------------------------------------------------------------

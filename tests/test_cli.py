@@ -37,16 +37,41 @@ def test_cli_basic_usage(cli_runner, sample_schema):
             json.dump(sample_schema, f)
 
         result = cli_runner.invoke(
-            main, ["--schema", str(schema_path), "--rows", "5", "--seed", "42"]
+            main,
+            ["--schema", str(schema_path), "--rows", "5", "--seed", "42"],
+            input="y\n",
         )
 
+        if result.exit_code != 0:
+            print(f"CLI failed with exit code {result.exit_code}")
+            print(f"Output: {result.output}")
+            if result.exception:
+                import traceback
+
+                print(f"Exception: {result.exception}")
+                traceback.print_exception(
+                    type(result.exception),
+                    result.exception,
+                    result.exception.__traceback__,
+                )
         assert result.exit_code == 0
         assert "Saved 5 rows" in result.output
 
-        # Check output file was created in default data directory
+        # Check output directory was created in default data directory
         from milvus_fake_data.cli import DEFAULT_DATA_DIR
-        output_file = DEFAULT_DATA_DIR / "test_cli.parquet"
-        assert output_file.exists()
+
+        output_dir = DEFAULT_DATA_DIR / "test_cli"
+        assert output_dir.exists()
+        assert output_dir.is_dir()
+
+        # Check that meta.json is generated
+        meta_file = output_dir / "meta.json"
+        assert meta_file.exists()
+
+        # Check that at least one data file exists (excluding meta.json)
+        all_files = list(output_dir.iterdir())
+        data_files = [f for f in all_files if f.name != "meta.json"]
+        assert len(data_files) > 0
 
 
 def test_cli_csv_output(cli_runner, sample_schema):
@@ -72,10 +97,24 @@ def test_cli_csv_output(cli_runner, sample_schema):
                 "--seed",
                 "42",
             ],
+            input="y\n",
         )
 
         assert result.exit_code == 0
-        assert output_path.exists()
+
+        # LocalBulkWriter treats the output path as a directory
+        output_dir = output_path  # Don't remove suffix - it's already a directory
+        assert output_dir.exists()
+        assert output_dir.is_dir()
+
+        # Check that meta.json is generated
+        meta_file = output_dir / "meta.json"
+        assert meta_file.exists()
+
+        # Check that at least one data file exists (excluding meta.json)
+        all_files = list(output_dir.iterdir())
+        data_files = [f for f in all_files if f.name != "meta.json"]
+        assert len(data_files) > 0
 
 
 def test_cli_preview_option(cli_runner, sample_schema):
@@ -91,6 +130,18 @@ def test_cli_preview_option(cli_runner, sample_schema):
             ["--schema", str(schema_path), "--rows", "2", "--preview", "--seed", "42"],
         )
 
+        if result.exit_code != 0:
+            print(f"Preview CLI failed with exit code {result.exit_code}")
+            print(f"Output: {result.output}")
+            if result.exception:
+                import traceback
+
+                print(f"Exception: {result.exception}")
+                traceback.print_exception(
+                    type(result.exception),
+                    result.exception,
+                    result.exception.__traceback__,
+                )
         assert result.exit_code == 0
         assert "Preview (top 5 rows):" in result.output
 

@@ -241,9 +241,9 @@ class TestSchemaManagerCLI:
     """Test schema management CLI commands."""
 
     def test_list_all_schemas_command(self):
-        """Test --list-all-schemas command."""
+        """Test --list-schemas command."""
         runner = CliRunner()
-        result = runner.invoke(main, ["--list-all-schemas"])
+        result = runner.invoke(main, ["--list-schemas"])
 
         assert result.exit_code == 0
         assert "Built-in Schemas" in result.output
@@ -413,6 +413,7 @@ class TestSchemaManagerCLI:
                         "--seed",
                         "42",
                     ],
+                    input="y\n",
                 )
 
                 assert result.exit_code == 0
@@ -455,7 +456,11 @@ class TestSchemaManagerCLI:
                 assert "Schema: my_custom_show (Custom)" in result.output
                 assert "Custom test schema" in result.output
                 assert "Fields" in result.output
-                assert "id" in result.output and "Int64" in result.output and "PRIMARY" in result.output
+                assert (
+                    "id" in result.output
+                    and "Int64" in result.output
+                    and "PRIMARY" in result.output
+                )
             finally:
                 # Clean up environment
                 if "MILVUS_FAKE_DATA_SCHEMA_DIR" in os.environ:

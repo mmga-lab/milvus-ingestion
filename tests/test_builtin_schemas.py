@@ -134,7 +134,7 @@ def test_cli_list_schemas():
     result = runner.invoke(main, ["--list-schemas"])
 
     assert result.exit_code == 0
-    assert "Available Built-in Schemas" in result.output
+    assert "Built-in Schemas" in result.output
     assert "simple" in result.output
     assert "ecommerce" in result.output
     assert "Simple Example" in result.output
@@ -157,6 +157,7 @@ def test_cli_builtin_schema_generation():
                 "--seed",
                 "42",
             ],
+            input="y\n",
         )
 
         assert result.exit_code == 0
@@ -167,28 +168,6 @@ def test_cli_builtin_schema_generation():
         assert output_file.exists()
 
 
-def test_cli_save_builtin_schema():
-    """Test CLI command to save built-in schema to file."""
-    runner = CliRunner()
-
-    with tempfile.TemporaryDirectory() as temp_dir:
-        schema_file = Path(temp_dir) / "saved_schema.json"
-
-        result = runner.invoke(
-            main, ["--builtin", "ecommerce", "--save-schema", str(schema_file)]
-        )
-
-        assert result.exit_code == 0
-        assert "✓ Loaded built-in schema: ecommerce" in result.output
-        assert f"✓ Schema saved to: {schema_file}" in result.output
-        assert schema_file.exists()
-
-        # Verify the saved schema
-        with open(schema_file, encoding="utf-8") as f:
-            saved_schema = json.load(f)
-
-        original_schema = load_builtin_schema("ecommerce")
-        assert saved_schema == original_schema
 
 
 def test_cli_invalid_builtin_schema():
