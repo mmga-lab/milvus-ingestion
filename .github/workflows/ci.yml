@@ -30,12 +30,10 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: |
-          pdm sync --dev
+        run: make install-dev
 
       - name: Run tests with coverage
-        run: |
-          pdm run pytest --cov=src/milvus_fake_data --cov-report=xml --cov-report=term-missing
+        run: make test-cov
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == env.PYTHON_DEFAULT_VERSION && matrix.os == 'ubuntu-latest'
@@ -59,20 +57,13 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: |
-          pdm sync --dev
+        run: make install-dev
 
-      - name: Run ruff linting
-        run: |
-          pdm run ruff check . --output-format=github
+      - name: Run lint checks
+        run: make lint
 
-      - name: Run ruff formatting check
-        run: |
-          pdm run ruff format --check .
-
-      - name: Run mypy type checking
-        run: |
-          pdm run mypy src/
+      - name: Check formatting
+        run: make format-check
 
   build:
     name: Build Package
@@ -89,16 +80,13 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: |
-          pdm sync
+        run: make install-dev
 
       - name: Build package
-        run: |
-          pdm build
+        run: make build
 
       - name: Check package metadata
-        run: |
-          pdm run python -m twine check dist/*
+        run: pdm run python -m twine check dist/*
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -122,29 +110,20 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: |
-          pdm sync
+        run: make install-dev
 
       - name: Test CLI help
-        run: |
-          pdm run milvus-fake-data --help
+        run: pdm run milvus-fake-data --help
 
       - name: Test schema help
-        run: |
-          pdm run milvus-fake-data --schema-help
+        run: pdm run milvus-fake-data --schema-help
 
       - name: Create test schema
         run: |
           echo '{"collection_name": "test_collection", "fields": [{"name": "id", "type": "Int64", "is_primary": true}, {"name": "text", "type": "VarChar", "max_length": 100}]}' > my_schema.json
 
       - name: Test schema validation
-        run: |
-          pdm run milvus-fake-data --schema my_schema.json --validate-only
+        run: pdm run milvus-fake-data --schema my_schema.json --validate-only
 
       - name: Test data generation
-        run: |
-          pdm run milvus-fake-data --schema my_schema.json --rows 10 --preview
-
-      - name: Test interactive mode (dry run)
-        run: |
-          echo -e "test_collection\nid\nInt64\ny\nn\nn\ny" | timeout 30 pdm run milvus-fake-data --interactive --rows 5 || true
+        run: pdm run milvus-fake-data --schema my_schema.json --rows 10 --preview

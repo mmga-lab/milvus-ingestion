@@ -25,29 +25,16 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: |
-          pdm sync --dev
+        run: make install-dev
 
-      - name: Run tests
-        run: |
-          pdm run pytest
-
-      - name: Run linting
-        run: |
-          pdm run ruff check .
-          pdm run ruff format --check .
-
-      - name: Run type checking
-        run: |
-          pdm run mypy src/
+      - name: Run all checks (lint + test)
+        run: make check
 
       - name: Build package
-        run: |
-          pdm build
+        run: make build
 
       - name: Check package
-        run: |
-          pdm run python -m twine check dist/*
+        run: pdm run python -m twine check dist/*
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -99,7 +86,7 @@ jobs:
       name: pypi
       url: https://pypi.org/p/milvus-fake-data
     permissions:
-      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
+      id-token: write
 
     steps:
       - name: Download build artifacts

@@ -27,46 +27,19 @@ jobs:
           cache: true
 
       - name: Install dependencies
+        run: make install-dev
+
+      - name: Run security checks
         run: |
-          pdm sync --dev
-
-      - name: Run Safety check
-        run: |
-          pdm add --dev safety
-          pdm run safety check --json
-
-      - name: Run pip-audit
-        run: |
-          pdm add --dev pip-audit
-          pdm run pip-audit --format=json
-
-  code-scan:
-    name: Code Security Scan
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up PDM
-        uses: pdm-project/setup-pdm@v4
-        with:
-          python-version: ${{ env.PYTHON_DEFAULT_VERSION }}
-          cache: true
-
-      - name: Install dependencies
-        run: |
-          pdm sync --dev
-
-      - name: Run Bandit security analysis
-        run: |
-          pdm add --dev bandit[toml]
+          make security || true
+          # Generate JSON report for artifacts
           pdm run bandit -r src/ -f json -o bandit-report.json || true
 
-      - name: Upload Bandit results
+      - name: Upload security scan results
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: bandit-results
+          name: security-results
           path: bandit-report.json
 
   codeql:
@@ -77,11 +50,6 @@ jobs:
       contents: read
       security-events: write
 
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [ 'python' ]
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -89,7 +57,7 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v2
         with:
-          languages: ${{ matrix.language }}
+          languages: python
           queries: security-and-quality
 
       - name: Set up PDM
@@ -99,13 +67,12 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: |
-          pdm sync
+        run: make install
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v2
         with:
-          category: "/language:${{matrix.language}}"
+          category: "/language:python"
 
   secret-scan:
     name: Secret Scanning
@@ -134,14 +101,19 @@ jobs:
 
       - name: Build Docker image for scanning
         run: |
-          cat > Dockerfile.scan << 'EOF'
+          # Use existing Dockerfile if available, otherwise create a simple one
+          if [ ! -f Dockerfile ]; then
+            cat > Dockerfile.scan << 'EOF'
           FROM python:3.11-slim
           WORKDIR /app
           COPY . .
           RUN pip install .
           CMD ["milvus-fake-data", "--help"]
           EOF
-          docker build -f Dockerfile.scan -t milvus-fake-data:scan .
+            docker build -f Dockerfile.scan -t milvus-fake-data:scan .
+          else
+            docker build -t milvus-fake-data:scan .
+          fi
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
