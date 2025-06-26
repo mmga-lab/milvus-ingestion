@@ -168,8 +168,6 @@ def test_cli_builtin_schema_generation():
         assert output_file.exists()
 
 
-
-
 def test_cli_invalid_builtin_schema():
     """Test CLI with invalid built-in schema."""
     runner = CliRunner()

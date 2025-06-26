@@ -2,10 +2,17 @@
 
 Usage::
 
-    python -m milvus_fake_data.cli --schema schema.json --rows 1000  # default parquet
-    python -m milvus_fake_data.cli --schema schema.yaml -f csv --out /tmp/mock.csv
+    # Backward compatible (defaults to generate command)
+    milvus-fake-data --schema schema.json --rows 1000  # default parquet
+    milvus-fake-data --builtin simple --rows 100 --preview
 
-The script is also installed as ``milvus-fake-data`` when the package is
+    # New grouped structure
+    milvus-fake-data generate --schema schema.json --rows 1000
+    milvus-fake-data schema list
+    milvus-fake-data schema show simple
+    milvus-fake-data clean --yes
+
+The script is installed as ``milvus-fake-data`` when the package is
 installed via PDM/pip.
 """
 
@@ -55,12 +62,27 @@ _OUTPUT_FORMATS = {"parquet", "csv", "json", "npy"}
 DEFAULT_DATA_DIR = Path.home() / ".milvus-fake-data" / "data"
 
 
-@click.command(context_settings={"help_option_names": ["-h", "--help"]})
+@click.group(
+    context_settings={"help_option_names": ["-h", "--help"]},
+    invoke_without_command=True,
+)
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Enable verbose logging with detailed debug information.",
+)
+# Add generate command options here to make them available at the top level
 @click.option(
     "--schema",
     "schema_path",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     help="Path to schema JSON/YAML file.",
+)
+@click.option(
+    "--builtin",
+    "builtin_schema",
+    help="Use a built-in schema (e.g., 'ecommerce', 'documents').",
 )
 @click.option(
     "--rows",
@@ -98,28 +120,6 @@ DEFAULT_DATA_DIR = Path.home() / ".milvus-fake-data" / "data"
     help="Only validate schema without generating data.",
 )
 @click.option(
-    "--schema-help", is_flag=True, help="Show schema format help and examples."
-)
-@click.option(
-    "--list-schemas", is_flag=True, help="List all schemas (built-in and custom)."
-)
-@click.option(
-    "--builtin",
-    "builtin_schema",
-    help="Use a built-in schema (e.g., 'ecommerce', 'documents').",
-)
-@click.option(
-    "--add-schema",
-    "add_schema",
-    help="Add a custom schema (format: 'schema_id:schema_file.json').",
-)
-@click.option(
-    "--show-schema",
-    "show_schema",
-    help="Show details of a schema (built-in or custom).",
-)
-@click.option("--remove-schema", "remove_schema", help="Remove a custom schema by ID.")
-@click.option(
     "--no-progress",
     is_flag=True,
     help="Disable progress bar display for large datasets.",
@@ -131,12 +131,6 @@ DEFAULT_DATA_DIR = Path.home() / ".milvus-fake-data" / "data"
     show_default=True,
     type=int,
     help="Number of rows to generate and process in each batch for memory efficiency.",
-)
-@click.option(
-    "--verbose",
-    "-v",
-    is_flag=True,
-    help="Enable verbose logging with detailed debug information.",
 )
 @click.option(
     "--yes",
@@ -157,43 +151,151 @@ DEFAULT_DATA_DIR = Path.home() / ".milvus-fake-data" / "data"
     is_flag=True,
     help="Force overwrite output directory if it exists.",
 )
-@click.option(
-    "--clean",
-    is_flag=True,
-    help="Clean up generated output files.",
-)
-def main(
-    schema_path: Path | None,
-    rows: int,
-    output_format: str,
-    output_path: Path | None,
-    seed: int | None,
-    preview: bool = False,
-    validate_only: bool = False,
-    schema_help: bool = False,
-    list_schemas: bool = False,
-    builtin_schema: str | None = None,
-    add_schema: str | None = None,
-    show_schema: str | None = None,
-    remove_schema: str | None = None,
-    no_progress: bool = False,
-    batch_size: int = 10000,
-    verbose: bool = False,
-    yes: bool = False,
-    chunk_size_mb: int = 128,
-    force: bool = False,
-    clean: bool = False,
-) -> None:
-    """Generate mock data from *schema_path* and write to disk using LocalBulkWriter.
+@click.pass_context
+def main(ctx: click.Context, verbose: bool = False, **kwargs: Any) -> None:
+    """Generate mock data for Milvus with schema management.
 
-    Output is always a directory containing data files and collection schema.json file.
+    If no subcommand is specified, this will generate data using the provided options.
     """
     # Setup logging first
     setup_logging(verbose=verbose, log_level="DEBUG" if verbose else "INFO")
     logger = get_logger(__name__)
 
+    # Store verbose in context for subcommands
+    ctx.ensure_object(dict)
+    ctx.obj["verbose"] = verbose
+
     logger.info(
         "Starting milvus-fake-data CLI",
+        extra={"verbose": verbose},
+    )
+
+    # If no subcommand was invoked, run the generate command
+    if ctx.invoked_subcommand is None:
+        # Filter kwargs to only include generate command parameters
+        generate_params = {
+            "schema_path": kwargs.get("schema_path"),
+            "builtin_schema": kwargs.get("builtin_schema"),
+            "rows": kwargs.get("rows", 1000),
+            "output_format": kwargs.get("output_format", "parquet"),
+            "output_path": kwargs.get("output_path"),
+            "seed": kwargs.get("seed"),
+            "preview": kwargs.get("preview", False),
+            "validate_only": kwargs.get("validate_only", False),
+            "no_progress": kwargs.get("no_progress", False),
+            "batch_size": kwargs.get("batch_size", 10000),
+            "yes": kwargs.get("yes", False),
+            "chunk_size_mb": kwargs.get("chunk_size_mb", 128),
+            "force": kwargs.get("force", False),
+        }
+        ctx.invoke(generate, **generate_params)
+
+
+@main.command()
+@click.option(
+    "--schema",
+    "schema_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Path to schema JSON/YAML file.",
+)
+@click.option(
+    "--builtin",
+    "builtin_schema",
+    help="Use a built-in schema (e.g., 'ecommerce', 'documents').",
+)
+@click.option(
+    "--rows",
+    "-r",
+    default=1000,
+    show_default=True,
+    type=int,
+    help="Number of rows to generate.",
+)
+@click.option(
+    "-f",
+    "--format",
+    "output_format",
+    default="parquet",
+    show_default=True,
+    type=click.Choice(sorted(_OUTPUT_FORMATS)),
+    help="Output file format.",
+)
+@click.option(
+    "-p",
+    "--preview",
+    is_flag=True,
+    help="Print first 5 rows to terminal after generation.",
+)
+@click.option(
+    "--out",
+    "output_path",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Output directory path (will create directory with data files + meta.json). Default: <collection_name>/",
+)
+@click.option("--seed", type=int, help="Random seed for reproducibility.")
+@click.option(
+    "--validate-only",
+    is_flag=True,
+    help="Only validate schema without generating data.",
+)
+@click.option(
+    "--no-progress",
+    is_flag=True,
+    help="Disable progress bar display for large datasets.",
+)
+@click.option(
+    "--batch-size",
+    "batch_size",
+    default=10000,
+    show_default=True,
+    type=int,
+    help="Number of rows to generate and process in each batch for memory efficiency.",
+)
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help="Auto-confirm all prompts and proceed without interactive confirmation.",
+)
+@click.option(
+    "--chunk-size",
+    "chunk_size_mb",
+    default=128,
+    show_default=True,
+    type=int,
+    help="Chunk size in MB for LocalBulkWriter segments.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Force overwrite output directory if it exists.",
+)
+@click.pass_context
+def generate(
+    ctx: click.Context,
+    schema_path: Path | None = None,
+    builtin_schema: str | None = None,
+    rows: int = 1000,
+    output_format: str = "parquet",
+    output_path: Path | None = None,
+    seed: int | None = None,
+    preview: bool = False,
+    validate_only: bool = False,
+    no_progress: bool = False,
+    batch_size: int = 10000,
+    yes: bool = False,
+    chunk_size_mb: int = 128,
+    force: bool = False,
+) -> None:
+    """Generate mock data from schema and write to disk using LocalBulkWriter.
+
+    Output is always a directory containing data files and collection schema.json file.
+    """
+    verbose = ctx.obj["verbose"]
+    logger = get_logger(__name__)
+
+    logger.info(
+        "Starting data generation",
         extra={
             "rows": rows,
             "format": output_format,
@@ -203,154 +305,7 @@ def main(
         },
     )
 
-    # ------------------------------------------------------------------
-    # Handle special flags first
-    # ------------------------------------------------------------------
-    if schema_help:
-        click.echo(get_schema_help())
-        return
-
-    if clean:
-        _handle_clean_command(yes, logger)
-        return
-
-    if list_schemas:
-        manager = get_schema_manager()
-        all_schemas = manager.list_all_schemas()
-
-        # Separate built-in and custom schemas
-        builtin_schemas = {
-            k: v for k, v in all_schemas.items() if manager.is_builtin_schema(k)
-        }
-        custom_schemas = {
-            k: v for k, v in all_schemas.items() if not manager.is_builtin_schema(k)
-        }
-
-        if builtin_schemas:
-            display_schema_list(builtin_schemas, "Built-in Schemas")
-
-        if custom_schemas:
-            display_schema_list(custom_schemas, "Custom Schemas")
-
-        if not builtin_schemas and not custom_schemas:
-            click.echo("No schemas found.")
-
-        click.echo(
-            "\nFor detailed schema information: milvus-fake-data --show-schema <schema_id>"
-        )
-        return
-
-    if show_schema:
-        manager = get_schema_manager()
-        try:
-            info = manager.get_schema_info(show_schema)
-            if not info:
-                display_error(
-                    f"Schema '{show_schema}' not found.",
-                    "Use --list-all-schemas to see available schemas.",
-                )
-                raise SystemExit(1)
-
-            schema_data = manager.load_schema(show_schema)
-            is_builtin = manager.is_builtin_schema(show_schema)
-
-            display_schema_details(show_schema, info, schema_data, is_builtin)
-
-        except Exception as e:
-            display_error(f"Error showing schema: {e}")
-            raise SystemExit(1) from e
-        return
-
-    if add_schema:
-        manager = get_schema_manager()
-        try:
-            # Parse schema_id:schema_file format
-            if ":" not in add_schema:
-                display_error(
-                    "Format should be: schema_id:schema_file.json",
-                    "Example: --add-schema my_schema:my_schema.json",
-                )
-                raise SystemExit(1)
-
-            schema_id, schema_file = add_schema.split(":", 1)
-            schema_path = Path(schema_file)
-
-            if not schema_path.exists():
-                display_error(f"Schema file not found: {schema_path}")
-                raise SystemExit(1)
-
-            # Load and validate schema
-            try:
-                import yaml
-
-                content = schema_path.read_text("utf-8")
-                if schema_path.suffix.lower() in {".yaml", ".yml"}:
-                    schema_data = yaml.safe_load(content)
-                else:
-                    schema_data = json.loads(content)
-            except Exception as e:
-                display_error(f"Error reading schema file: {e}")
-                raise SystemExit(1) from e
-
-            # Get additional info from user
-            description = click.prompt(
-                "Schema description (optional)", default="", show_default=False
-            )
-            use_cases_input = click.prompt(
-                "Use cases (comma-separated, optional)", default="", show_default=False
-            )
-            use_cases = (
-                [uc.strip() for uc in use_cases_input.split(",") if uc.strip()]
-                if use_cases_input
-                else []
-            )
-
-            manager.add_schema(schema_id, schema_data, description, use_cases)
-
-            details = f"Description: {description or 'N/A'}\n"
-            details += f"Use cases: {', '.join(use_cases) if use_cases else 'N/A'}\n"
-            details += f"Usage: milvus-fake-data --show-schema {schema_id}"
-
-            display_success(f"Added custom schema: {schema_id}", details)
-
-        except ValueError as e:
-            display_error(f"Error adding schema: {e}")
-            raise SystemExit(1) from e
-        except Exception as e:
-            display_error(f"Unexpected error: {e}")
-            raise SystemExit(1) from e
-        return
-
-    if remove_schema:
-        manager = get_schema_manager()
-        try:
-            if not manager.schema_exists(remove_schema):
-                display_error(f"Schema '{remove_schema}' does not exist.")
-                raise SystemExit(1)
-
-            if manager.is_builtin_schema(remove_schema):
-                display_error(f"Cannot remove built-in schema '{remove_schema}'.")
-                raise SystemExit(1)
-
-            if click.confirm(
-                f"Are you sure you want to remove schema '{remove_schema}'?"
-            ):
-                manager.remove_schema(remove_schema)
-                display_success(f"Removed custom schema: {remove_schema}")
-            else:
-                click.echo("Cancelled.")
-
-        except ValueError as e:
-            display_error(f"Error removing schema: {e}")
-            raise SystemExit(1) from e
-        except Exception as e:
-            display_error(f"Unexpected error: {e}")
-            raise SystemExit(1) from e
-        return
-
-    # ------------------------------------------------------------------
     # Validate argument combinations
-    # ------------------------------------------------------------------
     provided_args = [
         ("--schema", schema_path is not None),
         ("--builtin", builtin_schema is not None),
@@ -622,6 +577,162 @@ def main(
         )
         click.echo("\nPreview (top 5 rows):")
         click.echo(preview_df.head())
+
+
+@main.group()
+def schema() -> None:
+    """Manage schemas (built-in and custom)."""
+    pass
+
+
+@schema.command("list")
+def list_schemas() -> None:
+    """List all available schemas."""
+    manager = get_schema_manager()
+    all_schemas = manager.list_all_schemas()
+
+    # Separate built-in and custom schemas
+    builtin_schemas = {
+        k: v for k, v in all_schemas.items() if manager.is_builtin_schema(k)
+    }
+    custom_schemas = {
+        k: v for k, v in all_schemas.items() if not manager.is_builtin_schema(k)
+    }
+
+    if builtin_schemas:
+        display_schema_list(builtin_schemas, "Built-in Schemas")
+
+    if custom_schemas:
+        display_schema_list(custom_schemas, "Custom Schemas")
+
+    if not builtin_schemas and not custom_schemas:
+        click.echo("No schemas found.")
+
+    click.echo(
+        "\nFor detailed schema information: milvus-fake-data schema show <schema_id>"
+    )
+
+
+@schema.command()
+@click.argument("schema_id")
+def show(schema_id: str) -> None:
+    """Show details of a specific schema."""
+    manager = get_schema_manager()
+    try:
+        info = manager.get_schema_info(schema_id)
+        if not info:
+            display_error(
+                f"Schema '{schema_id}' not found.",
+                "Use 'milvus-fake-data schema list' to see available schemas.",
+            )
+            raise SystemExit(1)
+
+        schema_data = manager.load_schema(schema_id)
+        is_builtin = manager.is_builtin_schema(schema_id)
+
+        display_schema_details(schema_id, info, schema_data, is_builtin)
+
+    except Exception as e:
+        display_error(f"Error showing schema: {e}")
+        raise SystemExit(1) from e
+
+
+@schema.command()
+@click.argument("schema_id")
+@click.argument(
+    "schema_file", type=click.Path(exists=True, dir_okay=False, path_type=Path)
+)
+def add(schema_id: str, schema_file: Path) -> None:
+    """Add a custom schema."""
+    manager = get_schema_manager()
+    try:
+        # Load and validate schema
+        try:
+            import yaml
+
+            content = schema_file.read_text("utf-8")
+            if schema_file.suffix.lower() in {".yaml", ".yml"}:
+                schema_data = yaml.safe_load(content)
+            else:
+                schema_data = json.loads(content)
+        except Exception as e:
+            display_error(f"Error reading schema file: {e}")
+            raise SystemExit(1) from e
+
+        # Get additional info from user
+        description = click.prompt(
+            "Schema description (optional)", default="", show_default=False
+        )
+        use_cases_input = click.prompt(
+            "Use cases (comma-separated, optional)", default="", show_default=False
+        )
+        use_cases = (
+            [uc.strip() for uc in use_cases_input.split(",") if uc.strip()]
+            if use_cases_input
+            else []
+        )
+
+        manager.add_schema(schema_id, schema_data, description, use_cases)
+
+        details = f"Description: {description or 'N/A'}\n"
+        details += f"Use cases: {', '.join(use_cases) if use_cases else 'N/A'}\n"
+        details += f"Usage: milvus-fake-data schema show {schema_id}"
+
+        display_success(f"Added custom schema: {schema_id}", details)
+
+    except ValueError as e:
+        display_error(f"Error adding schema: {e}")
+        raise SystemExit(1) from e
+    except Exception as e:
+        display_error(f"Unexpected error: {e}")
+        raise SystemExit(1) from e
+
+
+@schema.command()
+@click.argument("schema_id")
+def remove(schema_id: str) -> None:
+    """Remove a custom schema."""
+    manager = get_schema_manager()
+    try:
+        if not manager.schema_exists(schema_id):
+            display_error(f"Schema '{schema_id}' does not exist.")
+            raise SystemExit(1)
+
+        if manager.is_builtin_schema(schema_id):
+            display_error(f"Cannot remove built-in schema '{schema_id}'.")
+            raise SystemExit(1)
+
+        if click.confirm(f"Are you sure you want to remove schema '{schema_id}'?"):
+            manager.remove_schema(schema_id)
+            display_success(f"Removed custom schema: {schema_id}")
+        else:
+            click.echo("Cancelled.")
+
+    except ValueError as e:
+        display_error(f"Error removing schema: {e}")
+        raise SystemExit(1) from e
+    except Exception as e:
+        display_error(f"Unexpected error: {e}")
+        raise SystemExit(1) from e
+
+
+@schema.command()
+def help() -> None:
+    """Show schema format help and examples."""
+    click.echo(get_schema_help())
+
+
+@main.command()
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help="Auto-confirm all prompts and proceed without interactive confirmation.",
+)
+def clean(yes: bool = False) -> None:
+    """Clean up generated output files."""
+    logger = get_logger(__name__)
+    _handle_clean_command(yes, logger)
 
 
 def _save_with_bulk_writer_batched(

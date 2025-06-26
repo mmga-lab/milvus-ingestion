@@ -35,16 +35,16 @@ Get started instantly with pre-built schemas for common use cases:
 
 ```bash
 # List all available built-in schemas
-milvus-fake-data --list-schemas
+milvus-fake-data schema list
 
-# Generate data using a built-in schema
+# Generate data using a built-in schema (backward compatible)
 milvus-fake-data --builtin simple --rows 1000 --preview
+
+# Generate data using explicit generate command
+milvus-fake-data generate --builtin simple --rows 1000 --preview
 
 # Generate e-commerce product data with output file
 milvus-fake-data --builtin ecommerce --rows 5000 --out products.parquet
-
-# Save a built-in schema for customization
-milvus-fake-data --builtin documents --save-schema my_documents.json
 ```
 
 **Available Built-in Schemas:**
@@ -96,16 +96,16 @@ Store and organize your schemas for reuse:
 
 ```bash
 # Add a custom schema to your library
-milvus-fake-data --add-schema my_products:product_schema.json
+milvus-fake-data schema add my_products product_schema.json
 
 # List all schemas (built-in + custom)
-milvus-fake-data --list-all-schemas
+milvus-fake-data schema list
 
 # Use your custom schema like a built-in one
 milvus-fake-data --builtin my_products --rows 1000
 
 # Show detailed schema information
-milvus-fake-data --show-schema my_products
+milvus-fake-data schema show my_products
 ```
 
 ### 4. Python API
@@ -241,7 +241,32 @@ fields:
 
 ## 📚 CLI Reference
 
-### Core Commands
+### Grouped Command Structure
+
+The CLI now supports a cleaner grouped structure while maintaining backward compatibility:
+
+```bash
+# Main command groups
+milvus-fake-data [generate options]  # Default: data generation (backward compatible)
+milvus-fake-data generate [options]  # Explicit data generation
+milvus-fake-data schema [command]    # Schema management
+milvus-fake-data clean [options]     # Utility commands
+```
+
+### Migration Guide
+
+**Old Commands → New Commands (both work!)**
+
+| Old Command | New Command | Status |
+|-------------|-------------|--------|
+| `--list-schemas` | `schema list` | ✅ Both work |
+| `--show-schema ID` | `schema show ID` | ✅ Both work |
+| `--add-schema ID:FILE` | `schema add ID FILE` | ✅ New syntax preferred |
+| `--remove-schema ID` | `schema remove ID` | ✅ Both work |
+| `--schema-help` | `schema help` | ✅ Both work |
+| `--clean` | `clean` | ✅ Both work |
+
+### Data Generation Commands
 
 | Command | Description | Example |
 |---------|-------------|---------|
@@ -252,32 +277,33 @@ fields:
 | `--out PATH` | Output file path | `--out data.parquet` |
 | `--preview` | Show first 5 rows | `--preview` |
 | `--seed INTEGER` | Random seed for reproducibility | `--seed 42` |
-
-### Schema Management
-
-| Command | Description | Example |
-|---------|-------------|---------|
-| `--list-schemas` | List built-in schemas | `--list-schemas` |
-| `--list-all-schemas` | List all schemas (built-in + custom) | `--list-all-schemas` |
-| `--show-schema SCHEMA_ID` | Show schema details | `--show-schema ecommerce` |
-| `--add-schema ID:FILE` | Add custom schema | `--add-schema products:schema.json` |
-| `--remove-schema SCHEMA_ID` | Remove custom schema | `--remove-schema products` |
-| `--save-schema PATH` | Save schema to file | `--save-schema schema.json` |
-
-### Validation & Help
-
-| Command | Description | Example |
-|---------|-------------|---------|
 | `--validate-only` | Validate schema without generating | `--validate-only` |
-| `--schema-help` | Show schema format help | `--schema-help` |
-| `--clean` | Clean up generated output files | `--clean` |
-| `--help` | Show help message | `--help` |
+
+### Schema Management Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `schema list` | List all schemas (built-in + custom) | `milvus-fake-data schema list` |
+| `schema show SCHEMA_ID` | Show schema details | `milvus-fake-data schema show ecommerce` |
+| `schema add SCHEMA_ID FILE` | Add custom schema | `milvus-fake-data schema add products schema.json` |
+| `schema remove SCHEMA_ID` | Remove custom schema | `milvus-fake-data schema remove products` |
+| `schema help` | Show schema format help | `milvus-fake-data schema help` |
+
+### Utility Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `clean` | Clean up generated output files | `milvus-fake-data clean --yes` |
+| `--help` | Show help message | `milvus-fake-data --help` |
 
 ### Common Usage Patterns
 
 ```bash
-# Quick start with built-in schema
+# Quick start with built-in schema (backward compatible)
 milvus-fake-data --builtin simple --rows 1000 --preview
+
+# Using explicit generate command
+milvus-fake-data generate --builtin simple --rows 1000 --preview
 
 # Generate large dataset with custom format
 milvus-fake-data --builtin ecommerce --rows 100000 --format csv --out products.csv
@@ -289,14 +315,13 @@ milvus-fake-data --schema my_schema.json --validate-only
 milvus-fake-data --builtin users --rows 5000 --seed 42 --out users.parquet
 
 # Schema management workflow
-milvus-fake-data --list-all-schemas
-milvus-fake-data --show-schema ecommerce
-milvus-fake-data --save-schema ecommerce_base.json
-# Edit the file, then add as custom schema
-milvus-fake-data --add-schema my_ecommerce:ecommerce_base.json
+milvus-fake-data schema list
+milvus-fake-data schema show ecommerce
+# Add custom schema
+milvus-fake-data schema add my_ecommerce ecommerce_base.json
 
 # Clean up generated output files
-milvus-fake-data --clean
+milvus-fake-data clean --yes
 ```
 
 ## 🛠️ Development
