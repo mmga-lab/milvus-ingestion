@@ -176,7 +176,7 @@ jobs:
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: |
+                body: `
                   🎉 Thank you for your first contribution to milvus-fake-data! 
 
                   We're excited to have you as part of our community. A few things to note:
@@ -186,5 +186,6 @@ jobs:
                   - Feel free to ask questions if you need help
 
                   Our maintainers will review your PR soon. Thanks again! 🚀
+                  `
               });
             }
