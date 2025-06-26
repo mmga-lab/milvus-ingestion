@@ -35,7 +35,7 @@ def test_list_builtin_schemas():
     assert set(schemas.keys()) == expected_schemas
 
     # Check schema metadata structure
-    for schema_id, info in schemas.items():
+    for _schema_id, info in schemas.items():
         assert "name" in info
         assert "description" in info
         assert "use_cases" in info
@@ -229,7 +229,7 @@ def test_cli_validate_builtin_schema():
 
     assert result.exit_code == 0
     assert "✓ Loaded built-in schema: simple" in result.output
-    assert "✓ Schema is valid!" in result.output
+    assert "✓ Schema" in result.output and "is valid!" in result.output
 
 
 @pytest.mark.parametrize(

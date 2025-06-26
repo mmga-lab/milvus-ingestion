@@ -112,7 +112,7 @@ def load_builtin_schema(schema_id: str) -> dict[str, Any]:
             f"Unknown schema ID '{schema_id}'. Available schemas: {available}"
         )
 
-    schema_file = SCHEMAS_DIR / BUILTIN_SCHEMAS[schema_id]["file"]
+    schema_file = SCHEMAS_DIR / BUILTIN_SCHEMAS[schema_id]["file"]  # type: ignore[operator]
     if not schema_file.exists():
         raise FileNotFoundError(f"Schema file not found: {schema_file}")
 
@@ -123,7 +123,7 @@ def load_builtin_schema(schema_id: str) -> dict[str, Any]:
         # Validate the schema to ensure it's correct
         validate_schema_data(schema_data)
 
-        return schema_data
+        return schema_data  # type: ignore[no-any-return]
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid JSON in schema file {schema_file}: {e}") from e
 
@@ -154,20 +154,20 @@ def get_schema_summary() -> str:
     for schema_id, info in BUILTIN_SCHEMAS.items():
         summary += f"## {info['name']} (`{schema_id}`)\n"
         summary += f"**Description:** {info['description']}\n\n"
-        summary += f"**Use Cases:** {', '.join(info['use_cases'])}\n\n"
+        summary += f"**Use Cases:** {', '.join(info['use_cases'])}\n\n"  # type: ignore[arg-type]
         summary += f"**Fields:** {info['fields_count']} fields\n\n"
 
         if info["vector_dims"]:
-            dims_str = ", ".join(map(str, info["vector_dims"]))
+            dims_str = ", ".join(map(str, info["vector_dims"]))  # type: ignore[call-overload]
             summary += f"**Vector Dimensions:** {dims_str}\n\n"
 
-        summary += f"**Usage:**\n"
-        summary += f"```bash\n"
-        summary += f"# Use built-in schema\n"
+        summary += "**Usage:**\n"
+        summary += "```bash\n"
+        summary += "# Use built-in schema\n"
         summary += f"milvus-fake-data --builtin {schema_id} --rows 1000\n\n"
-        summary += f"# Save schema to file for customization\n"
+        summary += "# Save schema to file for customization\n"
         summary += f"milvus-fake-data --builtin {schema_id} --save-schema my_{schema_id}.json\n"
-        summary += f"```\n\n"
+        summary += "```\n\n"
         summary += "---\n\n"
 
     return summary

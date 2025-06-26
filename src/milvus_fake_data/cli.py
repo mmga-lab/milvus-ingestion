@@ -16,7 +16,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import click
 from pymilvus import CollectionSchema, DataType, FieldSchema
@@ -26,9 +26,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
 from .builtin_schemas import (
-    get_schema_summary,
     list_builtin_schemas,
-    load_builtin_schema,
     save_schema_to_file,
 )
 from .generator import generate_mock_data
@@ -43,6 +41,9 @@ from .rich_display import (
 from .schema_manager import get_schema_manager
 
 _OUTPUT_FORMATS = {"parquet", "csv", "json", "npy"}
+
+# Default directory for generated data files: ~/.milvus-fake-data/data
+DEFAULT_DATA_DIR = Path.home() / ".milvus-fake-data" / "data"
 
 
 @click.command(context_settings={"help_option_names": ["-h", "--help"]})
@@ -145,7 +146,9 @@ def main(
     if list_schemas:
         schemas = list_builtin_schemas()
         display_schema_list(schemas, "Available Built-in Schemas")
-        click.echo("\nFor detailed schema information: milvus-fake-data --show-schema <schema_id>")
+        click.echo(
+            "\nFor detailed schema information: milvus-fake-data --show-schema <schema_id>"
+        )
         return
 
     if list_all_schemas:
@@ -178,13 +181,13 @@ def main(
             if not info:
                 display_error(
                     f"Schema '{show_schema}' not found.",
-                    "Use --list-all-schemas to see available schemas."
+                    "Use --list-all-schemas to see available schemas.",
                 )
                 raise SystemExit(1)
 
             schema_data = manager.load_schema(show_schema)
             is_builtin = manager.is_builtin_schema(show_schema)
-            
+
             display_schema_details(show_schema, info, schema_data, is_builtin)
 
         except Exception as e:
@@ -199,7 +202,7 @@ def main(
             if ":" not in add_schema:
                 display_error(
                     "Format should be: schema_id:schema_file.json",
-                    "Example: --add-schema my_schema:my_schema.json"
+                    "Example: --add-schema my_schema:my_schema.json",
                 )
                 raise SystemExit(1)
 
@@ -237,11 +240,11 @@ def main(
             )
 
             manager.add_schema(schema_id, schema_data, description, use_cases)
-            
+
             details = f"Description: {description or 'N/A'}\n"
             details += f"Use cases: {', '.join(use_cases) if use_cases else 'N/A'}\n"
             details += f"Usage: milvus-fake-data --show-schema {schema_id}"
-            
+
             display_success(f"Added custom schema: {schema_id}", details)
 
         except ValueError as e:
@@ -335,6 +338,7 @@ def main(
             import yaml
             from pydantic import ValidationError
 
+            assert schema_path is not None
             content = schema_path.read_text("utf-8")
             if schema_path.suffix.lower() in {".yaml", ".yml"}:
                 schema_data = yaml.safe_load(content)
@@ -342,23 +346,31 @@ def main(
                 schema_data = json.loads(content)
 
             validated_schema = validate_schema_data(schema_data)
-            
+
             # Prepare validation info for rich display
-            validation_info = {}
+            validation_info: dict[str, Any] = {}
             if isinstance(validated_schema, list):
                 validation_info["fields_count"] = len(validated_schema)
                 validation_info["fields"] = [
-                    {"name": field.name, "type": field.type, "is_primary": field.is_primary}
+                    {
+                        "name": field.name,
+                        "type": field.type,
+                        "is_primary": field.is_primary,
+                    }
                     for field in validated_schema
                 ]
             else:
                 validation_info["collection_name"] = validated_schema.collection_name
                 validation_info["fields_count"] = len(validated_schema.fields)
                 validation_info["fields"] = [
-                    {"name": field.name, "type": field.type, "is_primary": field.is_primary}
+                    {
+                        "name": field.name,
+                        "type": field.type,
+                        "is_primary": field.is_primary,
+                    }
                     for field in validated_schema.fields
                 ]
-            
+
             # Get schema ID for display
             if schema_path:
                 schema_id = schema_path.stem
@@ -366,7 +378,7 @@ def main(
                 schema_id = builtin_schema
             else:
                 schema_id = "schema"
-                
+
             display_schema_validation(schema_id, validation_info)
             return
         except ValidationError as e:
@@ -383,21 +395,23 @@ def main(
             click.echo(f"✗ Error reading schema file: {e}", err=True)
             raise SystemExit(1) from e
 
+    assert schema_path is not None
     df = generate_mock_data(schema_path, rows=rows, seed=seed)
 
     if output_path is None:
-        # derive default file name from schema collection or schema file stem
+        # derive default file name using default data directory (~/.milvus-fake-data/data)
         try:
-            content = Path(schema_path).read_text("utf-8")
+            content = schema_path.read_text("utf-8")
             data = json.loads(content)
             collection_name: str | None = (
                 data.get("collection_name") if isinstance(data, dict) else None
             )
         except Exception:
-            data = {}
             collection_name = None
         base_name = collection_name or schema_path.stem
-        output_path = schema_path.parent / f"{base_name}.{output_format}"
+        # Ensure target directory exists
+        DEFAULT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = DEFAULT_DATA_DIR / f"{base_name}.{output_format}"
 
     _save_with_bulk_writer(df, schema_path, output_path, output_format)
     click.echo(f"Saved {rows} rows to {output_path}")
@@ -433,6 +447,7 @@ def _save_with_bulk_writer(
             "DOUBLE": _maybe("DOUBLE"),
             "VARCHAR": _maybe("VARCHAR"),
             "JSON": _maybe("JSON"),
+            "ARRAY": _maybe("ARRAY"),
             "BINARY_VECTOR": _maybe("BINARY_VECTOR"),
             "FLOAT_VECTOR": _maybe("FLOAT_VECTOR"),
             "FLOAT16_VECTOR": _maybe("FLOAT16_VECTOR"),
@@ -454,6 +469,20 @@ def _save_with_bulk_writer(
             params["dim"] = int(f["dim"])
         if "max_length" in f:
             params["max_length"] = int(f["max_length"])
+
+        # Handle ARRAY type special parameters
+        if t == "ARRAY":
+            if "element_type" in f:
+                element_type = f["element_type"].upper()
+                element_dt = dtype_map.get(element_type)
+                if element_dt is not None:
+                    params["element_type"] = element_dt
+                    # For ARRAY with VARCHAR elements, max_length applies to the element
+                    if element_type == "VARCHAR" and "max_length" in f:
+                        params["max_length"] = int(f["max_length"])
+            if "max_capacity" in f:
+                params["max_capacity"] = int(f["max_capacity"])
+
         fs = FieldSchema(
             name=f["name"],
             dtype=dt,

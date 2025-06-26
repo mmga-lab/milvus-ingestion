@@ -154,14 +154,21 @@ def _gen_value_by_field(field: dict[str, Any]) -> Any:
         low, high = field.get("min", 0.0), field.get("max", 1_000.0)
         return random.uniform(low, high)
     if f_type in {"VARCHAR", "STRING"}:
-        return faker.text(max_nb_chars=max_length)
+        # Use 80% of max_length to avoid hitting the limit
+        safe_max_length = int(max_length * 0.8)
+        return faker.text(max_nb_chars=safe_max_length)
     if f_type == "JSON":
         return {"key": faker.text(max_nb_chars=16)}
     if f_type == "ARRAY":
         element_type = field.get("element_type", "INT32").upper()
         max_capacity = int(field.get("max_capacity", 5))
         arr_len = random.randint(1, max_capacity)
-        return [_gen_value_by_field({"type": element_type}) for _ in range(arr_len)]
+        # Create element field with proper constraints
+        element_field = {"type": element_type}
+        # Pass max_length to VARCHAR elements in arrays
+        if element_type in {"VARCHAR", "STRING"} and "max_length" in field:
+            element_field["max_length"] = field["max_length"]
+        return [_gen_value_by_field(element_field) for _ in range(arr_len)]
     # Vector types
     if f_type == "BINARY_VECTOR":
         return np.random.randint(0, 2, dim).astype(np.int8).tolist()

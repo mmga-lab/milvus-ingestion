@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+if TYPE_CHECKING:
+    from pydantic import ValidationInfo
 
 
 class FieldType(str, Enum):
@@ -95,7 +98,7 @@ class FieldSchema(BaseModel):
 
     @field_validator("auto_id")
     @classmethod
-    def validate_auto_id(cls, v: bool, info) -> bool:
+    def validate_auto_id(cls, v: bool, info: ValidationInfo) -> bool:
         """Validate auto_id can only be True for primary key fields."""
         if v and not info.data.get("is_primary", False):
             raise ValueError(

@@ -43,8 +43,9 @@ def test_cli_basic_usage(cli_runner, sample_schema):
         assert result.exit_code == 0
         assert "Saved 5 rows" in result.output
 
-        # Check output file was created
-        output_file = schema_path.parent / "test_cli.parquet"
+        # Check output file was created in default data directory
+        from milvus_fake_data.cli import DEFAULT_DATA_DIR
+        output_file = DEFAULT_DATA_DIR / "test_cli.parquet"
         assert output_file.exists()
 
 

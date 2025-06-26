@@ -246,7 +246,7 @@ class TestSchemaManagerCLI:
         result = runner.invoke(main, ["--list-all-schemas"])
 
         assert result.exit_code == 0
-        assert "# Built-in Schemas" in result.output
+        assert "Built-in Schemas" in result.output
         assert "simple" in result.output
         assert "ecommerce" in result.output
 
@@ -256,9 +256,9 @@ class TestSchemaManagerCLI:
         result = runner.invoke(main, ["--show-schema", "simple"])
 
         assert result.exit_code == 0
-        assert "# Schema: simple (Built-in)" in result.output
+        assert "Schema: simple (Built-in)" in result.output
         assert "Simple Example" in result.output
-        assert "## Fields:" in result.output
+        assert "Fields" in result.output
 
     def test_show_schema_not_found(self):
         """Test --show-schema with non-existent schema."""
@@ -452,10 +452,10 @@ class TestSchemaManagerCLI:
                 result = runner.invoke(main, ["--show-schema", "my_custom_show"])
 
                 assert result.exit_code == 0
-                assert "# Schema: my_custom_show (Custom)" in result.output
+                assert "Schema: my_custom_show (Custom)" in result.output
                 assert "Custom test schema" in result.output
-                assert "## Fields:" in result.output
-                assert "**id**: Int64 (PRIMARY)" in result.output
+                assert "Fields" in result.output
+                assert "id" in result.output and "Int64" in result.output and "PRIMARY" in result.output
             finally:
                 # Clean up environment
                 if "MILVUS_FAKE_DATA_SCHEMA_DIR" in os.environ:

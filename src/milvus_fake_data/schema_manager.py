@@ -3,7 +3,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .builtin_schemas import get_schema_info, list_builtin_schemas, load_builtin_schema
 from .models import validate_schema_data
@@ -12,7 +12,7 @@ from .models import validate_schema_data
 class SchemaManager:
     """Manages custom and built-in schemas."""
 
-    def __init__(self, schema_dir: Optional[Path] = None):
+    def __init__(self, schema_dir: Path | None = None):
         """Initialize schema manager.
 
         Args:
@@ -34,15 +34,15 @@ class SchemaManager:
         if not self.metadata_file.exists():
             self._save_metadata({})
 
-    def _load_metadata(self) -> Dict[str, Any]:
+    def _load_metadata(self) -> dict[str, Any]:
         """Load schema metadata."""
         try:
-            with open(self.metadata_file, "r", encoding="utf-8") as f:
-                return json.load(f)
+            with open(self.metadata_file, encoding="utf-8") as f:
+                return json.load(f)  # type: ignore[no-any-return]
         except (FileNotFoundError, json.JSONDecodeError):
             return {}
 
-    def _save_metadata(self, metadata: Dict[str, Any]) -> None:
+    def _save_metadata(self, metadata: dict[str, Any]) -> None:
         """Save schema metadata."""
         with open(self.metadata_file, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
@@ -50,9 +50,9 @@ class SchemaManager:
     def add_schema(
         self,
         schema_id: str,
-        schema_data: Dict[str, Any],
+        schema_data: dict[str, Any],
         description: str = "",
-        use_cases: Optional[List[str]] = None,
+        use_cases: list[str] | None = None,
     ) -> None:
         """Add a custom schema.
 
@@ -74,7 +74,7 @@ class SchemaManager:
         try:
             validate_schema_data(schema_data)
         except Exception as e:
-            raise ValueError(f"Invalid schema: {e}")
+            raise ValueError(f"Invalid schema: {e}") from e
 
         # Save schema file
         schema_file = self.schema_dir / f"{schema_id}.json"
@@ -97,9 +97,9 @@ class SchemaManager:
     def update_schema(
         self,
         schema_id: str,
-        schema_data: Dict[str, Any],
+        schema_data: dict[str, Any],
         description: str = "",
-        use_cases: Optional[List[str]] = None,
+        use_cases: list[str] | None = None,
     ) -> None:
         """Update an existing custom schema.
 
@@ -124,7 +124,7 @@ class SchemaManager:
         try:
             validate_schema_data(schema_data)
         except Exception as e:
-            raise ValueError(f"Invalid schema: {e}")
+            raise ValueError(f"Invalid schema: {e}") from e
 
         # Update schema file
         schema_file = self.schema_dir / f"{schema_id}.json"
@@ -170,7 +170,7 @@ class SchemaManager:
             del metadata[schema_id]
             self._save_metadata(metadata)
 
-    def load_schema(self, schema_id: str) -> Dict[str, Any]:
+    def load_schema(self, schema_id: str) -> dict[str, Any]:
         """Load a schema by ID.
 
         Args:
@@ -189,10 +189,10 @@ class SchemaManager:
             raise ValueError(f"Schema '{schema_id}' does not exist.")
 
         schema_file = self.schema_dir / f"{schema_id}.json"
-        with open(schema_file, "r", encoding="utf-8") as f:
-            return json.load(f)
+        with open(schema_file, encoding="utf-8") as f:
+            return json.load(f)  # type: ignore[no-any-return]
 
-    def get_schema_info(self, schema_id: str) -> Optional[Dict[str, Any]]:
+    def get_schema_info(self, schema_id: str) -> dict[str, Any] | None:
         """Get schema information.
 
         Args:
@@ -210,7 +210,7 @@ class SchemaManager:
         metadata = self._load_metadata()
         return metadata.get(schema_id)
 
-    def list_all_schemas(self) -> Dict[str, Dict[str, Any]]:
+    def list_all_schemas(self) -> dict[str, dict[str, Any]]:
         """List all schemas (built-in + custom).
 
         Returns:
@@ -225,7 +225,7 @@ class SchemaManager:
 
         return all_schemas
 
-    def list_custom_schemas(self) -> Dict[str, Dict[str, Any]]:
+    def list_custom_schemas(self) -> dict[str, dict[str, Any]]:
         """List only custom schemas.
 
         Returns:
@@ -261,7 +261,7 @@ class SchemaManager:
         """
         return get_schema_info(schema_id) is not None
 
-    def _extract_vector_dims(self, schema_data: Dict[str, Any]) -> List[int]:
+    def _extract_vector_dims(self, schema_data: dict[str, Any]) -> list[int]:
         """Extract vector dimensions from schema.
 
         Args:
