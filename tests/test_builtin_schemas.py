@@ -173,7 +173,9 @@ def test_cli_invalid_builtin_schema():
     """Test CLI with invalid built-in schema."""
     runner = CliRunner()
 
-    result = runner.invoke(main, ["generate", "--builtin", "nonexistent", "--rows", "1"])
+    result = runner.invoke(
+        main, ["generate", "--builtin", "nonexistent", "--rows", "1"]
+    )
 
     assert result.exit_code == 1
     assert "✗ Error with schema" in result.output

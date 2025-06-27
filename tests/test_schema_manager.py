@@ -308,14 +308,18 @@ class TestSchemaManagerCLI:
     def test_add_schema_invalid_format(self):
         """Test schema add with invalid file."""
         runner = CliRunner()
-        result = runner.invoke(main, ["schema", "add", "test_schema", "nonexistent.json"])
+        result = runner.invoke(
+            main, ["schema", "add", "test_schema", "nonexistent.json"]
+        )
 
         assert result.exit_code != 0
 
     def test_add_schema_file_not_found(self):
         """Test --add-schema with non-existent file."""
         runner = CliRunner()
-        result = runner.invoke(main, ["schema", "add", "test", "/nonexistent/file.json"])
+        result = runner.invoke(
+            main, ["schema", "add", "test", "/nonexistent/file.json"]
+        )
 
         assert result.exit_code != 0
         assert "does not exist" in result.output
