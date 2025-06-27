@@ -30,7 +30,8 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: make install-dev
+        run: |
+          pdm install || (pdm lock --update-reuse && pdm install)
 
       - name: Run tests with coverage
         run: make test-cov
@@ -57,7 +58,8 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: make install-dev
+        run: |
+          pdm install || (pdm lock --update-reuse && pdm install)
 
       - name: Run lint checks
         run: make lint
@@ -80,7 +82,8 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: make install-dev
+        run: |
+          pdm install || (pdm lock --update-reuse && pdm install)
 
       - name: Build package
         run: make build
@@ -110,7 +113,8 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: make install-dev
+        run: |
+          pdm install || (pdm lock --update-reuse && pdm install)
 
       - name: Test CLI help
         run: pdm run milvus-fake-data --help
