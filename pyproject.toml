@@ -1,8 +1,8 @@
 [project]
 name = "milvus-fake-data"
-version = "0.1.2"
-description = "Generate mock data for Milvus collections based on schema definitions"
-keywords = ["milvus", "vector-database", "mock-data", "fake-data", "data-generation"]
+version = "0.2.0"
+description = "High-performance mock data generator for Milvus collections with vectorized operations"
+keywords = ["milvus", "vector-database", "mock-data", "fake-data", "data-generation", "high-performance", "vectorization"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -13,6 +13,9 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Database",
     "Topic :: Software Development :: Testing",
+    "Topic :: Scientific/Engineering",
+    "Topic :: System :: Benchmark",
+    "Operating System :: OS Independent",
 ]
 authors = [
     {name = "zhuwenxing", email = "wenxing.zhu@zilliz.com"},
@@ -28,6 +31,7 @@ dependencies = [
     "pydantic>=2.0.0",
     "rich>=13.0.0",
     "loguru>=0.7.3",
+    "numba>=0.58.0",
 ]
 requires-python = ">=3.10"
 readme = "README.md"

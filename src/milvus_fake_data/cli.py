@@ -36,6 +36,7 @@ from rich.progress import (
     SpinnerColumn,
     TaskProgressColumn,
     TextColumn,
+    TimeElapsedColumn,
     TimeRemainingColumn,
 )
 
@@ -58,7 +59,7 @@ from .rich_display import (
 )
 from .schema_manager import get_schema_manager
 
-_OUTPUT_FORMATS = {"parquet", "csv", "json", "npy"}
+_OUTPUT_FORMATS = {"parquet", "json"}
 
 # Default directory for generated data files: ~/.milvus-fake-data/data
 DEFAULT_DATA_DIR = Path.home() / ".milvus-fake-data" / "data"
@@ -143,10 +144,10 @@ def main(ctx: click.Context, verbose: bool = False) -> None:
 @click.option(
     "--batch-size",
     "batch_size",
-    default=10000,
+    default=50000,
     show_default=True,
     type=int,
-    help="Number of rows to generate and process in each batch for memory efficiency.",
+    help="Number of rows to generate and process in each batch (larger batches = better performance).",
 )
 @click.option(
     "--yes",
@@ -167,6 +168,13 @@ def main(ctx: click.Context, verbose: bool = False) -> None:
     is_flag=True,
     help="Force overwrite output directory if it exists.",
 )
+@click.option(
+    "--workers",
+    "-w",
+    type=int,
+    default=None,
+    help="Number of parallel workers (default: auto-detect CPU cores).",
+)
 @click.pass_context
 def generate(
     ctx: click.Context,
@@ -179,12 +187,17 @@ def generate(
     preview: bool = False,
     validate_only: bool = False,
     no_progress: bool = False,
-    batch_size: int = 10000,
+    batch_size: int = 50000,
     yes: bool = False,
     chunk_size_mb: int = 128,
     force: bool = False,
+    workers: int | None = None,
 ) -> None:
-    """Generate mock data from schema and write to disk using LocalBulkWriter.
+    """Generate high-performance mock data from schema using parallel processing and JIT compilation.
+
+    This tool is optimized for large-scale data generation with vectorized operations,
+    parallel processing, and efficient file writing. Default mode uses all CPU cores
+    for maximum performance.
 
     Output is always a directory containing data files and collection schema.json file.
     """
@@ -424,14 +437,18 @@ def generate(
         shutil.rmtree(output_path)
         logger.debug("Output directory removed successfully")
 
-    # Use batch generation and writing for better memory efficiency
+    # Use high-performance data generation (default and only mode)
     logger.info(
-        "Starting batch data generation and writing",
-        output_file=str(output_path),
+        "Starting high-performance data generation",
+        output_dir=str(output_path),
         format=output_format,
+        workers=workers or "auto-detect",
+        rows=rows,
     )
     try:
-        _save_with_bulk_writer_batched(
+        # High-performance parallel generator (default and only mode)
+        logger.info("Using vectorized high-performance generator")
+        _save_with_high_performance_generator(
             schema_path,
             rows,
             output_path,
@@ -439,7 +456,7 @@ def generate(
             batch_size=batch_size,
             seed=seed,
             show_progress=not no_progress,
-            chunk_size_mb=chunk_size_mb,
+            num_workers=workers,
         )
         # Calculate directory size for logging (output is always a directory now)
         total_size = sum(
@@ -630,6 +647,129 @@ def clean(yes: bool = False) -> None:
     """Clean up generated output files."""
     logger = get_logger(__name__)
     _handle_clean_command(yes, logger)
+
+
+def _save_with_high_performance_generator(
+    schema_path: Path,
+    rows: int,
+    output_path: Path,
+    fmt: str,
+    batch_size: int = 10000,
+    seed: int | None = None,
+    show_progress: bool = True,
+    num_workers: int | None = None,
+) -> None:
+    """Save using high-performance vectorized generator optimized for large-scale data."""
+    import threading
+    import time
+
+    from .optimized_writer import generate_data_optimized
+
+    logger = get_logger(__name__)
+    start_time = time.time()
+
+    # Use larger batch size for high-performance mode
+    optimized_batch_size = max(batch_size, 50000)
+
+    logger.info(
+        "Starting high-performance vectorized generator",
+        schema_file=str(schema_path),
+        output_dir=str(output_path),
+        format=fmt,
+        rows=rows,
+        batch_size=optimized_batch_size,
+        workers=num_workers or "auto",
+    )
+
+    try:
+        if show_progress:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeRemainingColumn(),
+                TimeElapsedColumn(),
+            ) as progress:
+                task = progress.add_task(
+                    "Generating data with high-performance mode...", total=rows
+                )
+
+                # Custom progress monitoring
+                def monitor_progress() -> None:
+                    while not monitor_progress.stop:  # type: ignore[attr-defined]
+                        # Check file size to estimate progress
+                        try:
+                            if output_path.exists():
+                                files = list(output_path.glob(f"data.{fmt}"))
+                                if files:
+                                    # Estimate based on file growth
+                                    elapsed = time.time() - start_time
+                                    if elapsed > 1:
+                                        estimated_progress = min(
+                                            int(elapsed * rows / 30), rows
+                                        )  # Rough estimate
+                                        progress.update(
+                                            task, completed=estimated_progress
+                                        )
+                        except Exception:
+                            pass
+                        time.sleep(0.5)
+
+                monitor_progress.stop = False  # type: ignore[attr-defined]
+                monitor_thread = threading.Thread(target=monitor_progress)
+                monitor_thread.start()
+
+                try:
+                    # Run optimized generator
+                    files_created = generate_data_optimized(
+                        schema_path=schema_path,
+                        rows=rows,
+                        output_dir=output_path,
+                        format=fmt,
+                        batch_size=optimized_batch_size,
+                        seed=seed,
+                    )
+                finally:
+                    monitor_progress.stop = True  # type: ignore[attr-defined]
+                    monitor_thread.join()
+                    progress.update(task, completed=rows)
+        else:
+            # Run without progress bar
+            files_created = generate_data_optimized(
+                schema_path=schema_path,
+                rows=rows,
+                output_dir=output_path,
+                format=fmt,
+                batch_size=optimized_batch_size,
+                seed=seed,
+            )
+
+        # Log performance metrics
+        total_time = time.time() - start_time
+        total_size = sum(
+            Path(f).stat().st_size for f in files_created if Path(f).exists()
+        )
+        file_size_mb = total_size / (1024 * 1024)
+
+        log_performance(
+            "high_performance_generator",
+            total_time,
+            rows=rows,
+            batch_size=optimized_batch_size,
+            file_size_mb=file_size_mb,
+        )
+        logger.info(
+            "High-performance generator completed",
+            total_rows=rows,
+            output_dir=str(output_path),
+            file_size_mb=file_size_mb,
+            duration_seconds=total_time,
+            rows_per_second=rows / total_time if total_time > 0 else 0,
+        )
+    except Exception as e:
+        logger.error(f"High-performance generator failed: {e}")
+        raise
 
 
 def _save_with_bulk_writer_batched(

@@ -74,11 +74,11 @@ def test_cli_basic_usage(cli_runner, sample_schema):
         assert len(data_files) > 0
 
 
-def test_cli_csv_output(cli_runner, sample_schema):
-    """Test CSV output format."""
+def test_cli_json_output(cli_runner, sample_schema):
+    """Test JSON output format."""
     with tempfile.TemporaryDirectory() as temp_dir:
         schema_path = Path(temp_dir) / "schema.json"
-        output_path = Path(temp_dir) / "output.csv"
+        output_path = Path(temp_dir) / "output.json"
 
         with open(schema_path, "w") as f:
             json.dump(sample_schema, f)
@@ -92,7 +92,7 @@ def test_cli_csv_output(cli_runner, sample_schema):
                 "--rows",
                 "3",
                 "-f",
-                "csv",
+                "json",
                 "--out",
                 str(output_path),
                 "--seed",
