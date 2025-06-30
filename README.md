@@ -417,5 +417,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Built for the [Milvus](https://milvus.io/) vector database ecosystem
 - Optimized with [NumPy](https://numpy.org/) vectorized operations for maximum performance
 - Uses [PyArrow](https://arrow.apache.org/docs/python/) for efficient Parquet I/O
-- Powered by [Pandas](https://pandas.pydata.org/) and [Faker](https://faker.readthedocs.io/) for realistic data generation
-- Enhanced with [Numba](https://numba.pydata.org/) JIT compilation for computational acceleration
+- Powered by [Pandas](https://pandas.pydata.org/) and [Faker](https://faker.readthedocs.io/) for realistic data generatio

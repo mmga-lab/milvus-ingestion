@@ -100,5 +100,5 @@ dmypy.json
 *.csv
 *.json
 *.npy
-!example_schema.json
+!/schema.json
 !src/milvus_fake_data/schemas/**/*.json

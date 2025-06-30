@@ -28,8 +28,6 @@ from pathlib import Path
 from typing import Any
 
 import click
-from pymilvus import CollectionSchema, DataType, FieldSchema
-from pymilvus.bulk_writer import BulkFileType, LocalBulkWriter
 from rich.progress import (
     BarColumn,
     Progress,
@@ -40,7 +38,7 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-from .generator import generate_mock_data, generate_mock_data_batches
+from .generator import generate_mock_data
 from .logging_config import (
     get_logger,
     log_error_with_context,
@@ -156,24 +154,9 @@ def main(ctx: click.Context, verbose: bool = False) -> None:
     help="Auto-confirm all prompts and proceed without interactive confirmation.",
 )
 @click.option(
-    "--chunk-size",
-    "chunk_size_mb",
-    default=128,
-    show_default=True,
-    type=int,
-    help="Chunk size in MB for LocalBulkWriter segments.",
-)
-@click.option(
     "--force",
     is_flag=True,
     help="Force overwrite output directory if it exists.",
-)
-@click.option(
-    "--workers",
-    "-w",
-    type=int,
-    default=None,
-    help="Number of parallel workers (default: auto-detect CPU cores).",
 )
 @click.pass_context
 def generate(
@@ -189,15 +172,14 @@ def generate(
     no_progress: bool = False,
     batch_size: int = 50000,
     yes: bool = False,
-    chunk_size_mb: int = 128,
     force: bool = False,
-    workers: int | None = None,
 ) -> None:
-    """Generate high-performance mock data from schema using parallel processing and JIT compilation.
+    """Generate high-performance mock data from schema using optimized vectorized operations.
 
-    This tool is optimized for large-scale data generation with vectorized operations,
-    parallel processing, and efficient file writing. Default mode uses all CPU cores
-    for maximum performance.
+    This tool is optimized for large-scale data generation with NumPy vectorized operations
+    (automatically utilizing multiple CPU cores through optimized BLAS), efficient memory
+    management, and high-speed file I/O. Uses intelligent file partitioning for maximum
+    performance on large datasets.
 
     Output is always a directory containing data files and collection schema.json file.
     """
@@ -442,7 +424,6 @@ def generate(
         "Starting high-performance data generation",
         output_dir=str(output_path),
         format=output_format,
-        workers=workers or "auto-detect",
         rows=rows,
     )
     try:
@@ -456,7 +437,6 @@ def generate(
             batch_size=batch_size,
             seed=seed,
             show_progress=not no_progress,
-            num_workers=workers,
         )
         # Calculate directory size for logging (output is always a directory now)
         total_size = sum(
@@ -657,10 +637,8 @@ def _save_with_high_performance_generator(
     batch_size: int = 10000,
     seed: int | None = None,
     show_progress: bool = True,
-    num_workers: int | None = None,
 ) -> None:
     """Save using high-performance vectorized generator optimized for large-scale data."""
-    import threading
     import time
 
     from .optimized_writer import generate_data_optimized
@@ -678,7 +656,6 @@ def _save_with_high_performance_generator(
         format=fmt,
         rows=rows,
         batch_size=optimized_batch_size,
-        workers=num_workers or "auto",
     )
 
     try:
@@ -695,45 +672,23 @@ def _save_with_high_performance_generator(
                     "Generating data with high-performance mode...", total=rows
                 )
 
-                # Custom progress monitoring
-                def monitor_progress() -> None:
-                    while not monitor_progress.stop:  # type: ignore[attr-defined]
-                        # Check file size to estimate progress
-                        try:
-                            if output_path.exists():
-                                files = list(output_path.glob(f"data.{fmt}"))
-                                if files:
-                                    # Estimate based on file growth
-                                    elapsed = time.time() - start_time
-                                    if elapsed > 1:
-                                        estimated_progress = min(
-                                            int(elapsed * rows / 30), rows
-                                        )  # Rough estimate
-                                        progress.update(
-                                            task, completed=estimated_progress
-                                        )
-                        except Exception:
-                            pass
-                        time.sleep(0.5)
+                # Progress callback to update the progress bar
+                def update_progress(completed_rows: int) -> None:
+                    progress.update(task, completed=completed_rows)
 
-                monitor_progress.stop = False  # type: ignore[attr-defined]
-                monitor_thread = threading.Thread(target=monitor_progress)
-                monitor_thread.start()
+                # Run optimized generator with progress callback
+                files_created = generate_data_optimized(
+                    schema_path=schema_path,
+                    rows=rows,
+                    output_dir=output_path,
+                    format=fmt,
+                    batch_size=optimized_batch_size,
+                    seed=seed,
+                    progress_callback=update_progress,
+                )
 
-                try:
-                    # Run optimized generator
-                    files_created = generate_data_optimized(
-                        schema_path=schema_path,
-                        rows=rows,
-                        output_dir=output_path,
-                        format=fmt,
-                        batch_size=optimized_batch_size,
-                        seed=seed,
-                    )
-                finally:
-                    monitor_progress.stop = True  # type: ignore[attr-defined]
-                    monitor_thread.join()
-                    progress.update(task, completed=rows)
+                # Ensure progress shows 100% at the end
+                progress.update(task, completed=rows)
         else:
             # Run without progress bar
             files_created = generate_data_optimized(
@@ -770,231 +725,6 @@ def _save_with_high_performance_generator(
     except Exception as e:
         logger.error(f"High-performance generator failed: {e}")
         raise
-
-
-def _save_with_bulk_writer_batched(
-    schema_path: Path,
-    rows: int,
-    output_path: Path,
-    fmt: str,
-    batch_size: int = 10000,
-    seed: int | None = None,
-    show_progress: bool = True,
-    chunk_size_mb: int = 128,
-) -> None:
-    """Save using Milvus LocalBulkWriter with batch generation for memory efficiency."""
-    import time
-
-    import yaml
-
-    logger = get_logger(__name__)
-    start_time = time.time()
-
-    logger.info(
-        "Starting bulk writer with batch processing",
-        schema_file=str(schema_path),
-        output_file=str(output_path),
-        format=fmt,
-        rows=rows,
-        batch_size=batch_size,
-    )
-
-    # Build CollectionSchema from original schema file
-
-    schema_dict = yaml.safe_load(schema_path.read_text("utf-8"))
-    fields = schema_dict.get("fields", schema_dict)
-    col_fields = []
-
-    # Build DataType mapping safely (not all enums exist in every version)
-    def _maybe(name: str) -> DataType | None:
-        return getattr(DataType, name, None)
-
-    dtype_map: dict[str, DataType] = {
-        k: v
-        for k, v in {
-            "BOOL": _maybe("BOOL"),
-            "INT8": _maybe("INT8"),
-            "INT16": _maybe("INT16"),
-            "INT32": _maybe("INT32"),
-            "INT64": _maybe("INT64"),
-            "FLOAT": _maybe("FLOAT"),
-            "DOUBLE": _maybe("DOUBLE"),
-            "VARCHAR": _maybe("VARCHAR"),
-            "JSON": _maybe("JSON"),
-            "ARRAY": _maybe("ARRAY"),
-            "BINARY_VECTOR": _maybe("BINARY_VECTOR"),
-            "FLOAT_VECTOR": _maybe("FLOAT_VECTOR"),
-            "FLOAT16_VECTOR": _maybe("FLOAT16_VECTOR"),
-            "BFLOAT16_VECTOR": _maybe("BFLOAT16_VECTOR"),
-            "INT8_VECTOR": _maybe("INT8_VECTOR"),
-            "SPARSE_FLOAT_VECTOR": _maybe("SPARSE_FLOAT_VECTOR"),
-        }.items()
-        if v is not None
-    }
-    for f in fields:
-        t = f["type"].upper()
-        if "VECTOR" in t and "_VECTOR" not in t:
-            t = t.replace("VECTOR", "_VECTOR")
-        dt = dtype_map.get(t)
-        if dt is None:
-            continue  # skip unsupported in bulk writer
-        params = {}
-        if "dim" in f:
-            params["dim"] = int(f["dim"])
-        if "max_length" in f:
-            params["max_length"] = int(f["max_length"])
-
-        # Handle ARRAY type special parameters
-        if t == "ARRAY":
-            if "element_type" in f:
-                element_type = f["element_type"].upper()
-                element_dt = dtype_map.get(element_type)
-                if element_dt is not None:
-                    params["element_type"] = element_dt
-                    # For ARRAY with VARCHAR elements, max_length applies to the element
-                    if element_type == "VARCHAR" and "max_length" in f:
-                        params["max_length"] = int(f["max_length"])
-            if "max_capacity" in f:
-                params["max_capacity"] = int(f["max_capacity"])
-
-        fs = FieldSchema(
-            name=f["name"],
-            dtype=dt,
-            is_primary=f.get("is_primary", False),
-            auto_id=f.get("auto_id", False),
-            nullable=f.get("nullable", False),
-            **params,
-        )
-        col_fields.append(fs)
-    col_schema = CollectionSchema(fields=col_fields, enable_dynamic_field=True)
-    logger.debug(
-        "Collection schema built successfully",
-        fields_count=len(col_fields),
-        schema_fields=[f.name for f in col_fields],
-    )
-
-    file_type_map = {
-        "csv": BulkFileType.CSV,
-        "json": BulkFileType.JSON,
-        "parquet": BulkFileType.PARQUET,
-        "npy": BulkFileType.NUMPY,
-    }
-    file_type = file_type_map[fmt.lower()]
-    logger.debug("File type determined", format=fmt, file_type=str(file_type))
-
-    # Ensure directory exists
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    logger.debug("Output directory prepared", directory=str(output_path.parent))
-
-    with LocalBulkWriter(
-        schema=col_schema,
-        local_path=str(output_path),
-        chunk_size=chunk_size_mb * 1024 * 1024,
-        file_type=file_type,
-    ) as writer:
-        # Generate and write data in batches
-        total_written = 0
-
-        # Show progress bar when enabled
-        if show_progress:
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TaskProgressColumn(),
-                TimeRemainingColumn(),
-            ) as progress:
-                task = progress.add_task("Processing data...", total=rows)
-
-                for batch_df in generate_mock_data_batches(
-                    schema_path,
-                    rows=rows,
-                    batch_size=batch_size,
-                    seed=seed,
-                    show_progress=False,
-                ):
-                    for row in batch_df.to_dict(orient="records"):
-                        writer.append_row(row)
-                        total_written += 1
-                    progress.update(task, advance=len(batch_df))
-        else:
-            # Process without progress bar when disabled
-            for batch_df in generate_mock_data_batches(
-                schema_path,
-                rows=rows,
-                batch_size=batch_size,
-                seed=seed,
-                show_progress=False,
-            ):
-                for row in batch_df.to_dict(orient="records"):
-                    writer.append_row(row)
-                    total_written += 1
-        logger.info("Committing bulk writer", total_written=total_written)
-        writer.commit()
-
-        # writer.batch_files returns list[list[str]]
-        all_generated_files = []
-        for batch in writer.batch_files:
-            all_generated_files.extend(batch)
-
-        logger.debug(
-            "Generated files", files=all_generated_files, count=len(all_generated_files)
-        )
-
-        # Use output_path directly as the output directory
-        output_dir = output_path
-        final_files = [Path(f) for f in all_generated_files]
-
-        # Save collection schema to the output directory
-        meta_file = output_dir / "meta.json"
-        with open(meta_file, "w", encoding="utf-8") as f:
-            meta_content = {
-                "collection_schema": col_schema.to_dict(),
-                "generation_metadata": {
-                    "total_rows": total_written,
-                    "batch_size": batch_size,
-                    "chunk_size_mb": chunk_size_mb,
-                    "file_count": len(final_files),
-                    "data_files": [f.name for f in final_files],
-                },
-            }
-            json.dump(meta_content, f, indent=2, ensure_ascii=False)
-
-        final_files.append(meta_file)
-
-        # Update output_path to point to the directory for logging
-        output_path = output_dir
-        logger.info(
-            "Data files and schema generated",
-            output_dir=str(output_dir),
-            data_files=len(final_files) - 1,
-            total_files=len(final_files),
-        )
-
-        # Log final performance metrics
-        total_time = time.time() - start_time
-
-        # Calculate total directory size (output is always a directory now)
-        total_size = sum(
-            f.stat().st_size for f in output_path.rglob("*") if f.is_file()
-        )
-        file_size_mb = total_size / (1024 * 1024)
-
-        log_performance(
-            "bulk_writer_batched",
-            total_time,
-            rows=total_written,
-            batch_size=batch_size,
-            file_size_mb=file_size_mb,
-        )
-        logger.info(
-            "Bulk writer completed successfully",
-            total_written=total_written,
-            output_file=str(output_path),
-            file_size_mb=file_size_mb,
-            duration_seconds=total_time,
-            rows_per_second=total_written / total_time if total_time > 0 else 0,
-        )
 
 
 def _handle_clean_command(yes: bool, logger: Any) -> None:

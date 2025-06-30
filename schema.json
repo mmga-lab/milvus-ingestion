@@ -1,0 +1,41 @@
+{
+  "collection_name": "performance_test",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Int64",
+      "is_primary": true,
+      "auto_id": false
+    },
+    {
+      "name": "vector",
+      "type": "FloatVector",
+      "dim": 128
+    },
+    {
+      "name": "sparse_vector",
+      "type": "SparseFloatVector",
+      "dim": 1000
+    },
+    {
+      "name": "text",
+      "type": "VarChar",
+      "max_length": 500
+    },
+    {
+      "name": "score",
+      "type": "Float"
+    },
+    {
+      "name": "metadata",
+      "type": "JSON"
+    },
+    {
+      "name": "tags",
+      "type": "Array",
+      "element_type": "VarChar",
+      "max_capacity": 5,
+      "max_length": 50
+    }
+  ]
+}
