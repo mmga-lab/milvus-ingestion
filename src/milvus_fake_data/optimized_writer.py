@@ -74,9 +74,8 @@ def generate_data_optimized(
         else:
             scalar_fields.append(field)
 
-    # Calculate total number of files needed based on actual batch constraints
-    effective_max_rows = min(max_rows_per_file, batch_size * 10)
-    total_files = max(1, (rows + effective_max_rows - 1) // effective_max_rows)
+    # Calculate total number of files needed based on user-specified constraints
+    total_files = max(1, (rows + max_rows_per_file - 1) // max_rows_per_file)
 
     # Generate data in batches and write multiple files if needed
     remaining_rows = rows
@@ -87,8 +86,8 @@ def generate_data_optimized(
     total_write_time = 0.0
 
     while remaining_rows > 0:
-        # Determine batch size for this file
-        current_batch_rows = min(remaining_rows, max_rows_per_file, batch_size * 10)
+        # Determine batch size for this file (respect user's max_rows_per_file setting)
+        current_batch_rows = min(remaining_rows, max_rows_per_file)
 
         logger.info(f"Generating file {file_index + 1}: {current_batch_rows:,} rows")
 
