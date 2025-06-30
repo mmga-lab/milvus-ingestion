@@ -274,6 +274,8 @@ milvus-fake-data clean [options]     # Utility commands
 | `--validate-only` | Validate schema without generating | `milvus-fake-data generate --validate-only` |
 | `--no-progress` | Disable progress bar display | `milvus-fake-data generate --no-progress` |
 | `--batch-size INTEGER` | Batch size for memory efficiency (default: 50000) | `milvus-fake-data generate --batch-size 100000` |
+| `--max-file-size INTEGER` | Maximum size per file in MB (default: 256) | `milvus-fake-data generate --max-file-size 100` |
+| `--max-rows-per-file INTEGER` | Maximum rows per file (default: 1000000) | `milvus-fake-data generate --max-rows-per-file 500000` |
 | `--yes` | Auto-confirm prompts | `milvus-fake-data generate --yes` |
 | `--force` | Force overwrite output directory | `milvus-fake-data generate --force` |
 
@@ -308,6 +310,9 @@ milvus-fake-data generate --schema my_schema.json --validate-only
 
 # Reproducible large-scale data generation
 milvus-fake-data generate --builtin users --rows 2000000 --seed 42 --out users/
+
+# Control file partitioning (smaller files for easier handling)
+milvus-fake-data generate --builtin ecommerce --rows 5000000 --max-file-size 128 --max-rows-per-file 500000
 
 # Schema management workflow
 milvus-fake-data schema list

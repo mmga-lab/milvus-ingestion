@@ -158,6 +158,22 @@ def main(ctx: click.Context, verbose: bool = False) -> None:
     is_flag=True,
     help="Force overwrite output directory if it exists.",
 )
+@click.option(
+    "--max-file-size",
+    "max_file_size_mb",
+    default=256,
+    show_default=True,
+    type=int,
+    help="Maximum size per file in MB (for automatic file partitioning).",
+)
+@click.option(
+    "--max-rows-per-file",
+    "max_rows_per_file",
+    default=1000000,
+    show_default=True,
+    type=int,
+    help="Maximum rows per file (for automatic file partitioning).",
+)
 @click.pass_context
 def generate(
     ctx: click.Context,
@@ -173,6 +189,8 @@ def generate(
     batch_size: int = 50000,
     yes: bool = False,
     force: bool = False,
+    max_file_size_mb: int = 256,
+    max_rows_per_file: int = 1000000,
 ) -> None:
     """Generate high-performance mock data from schema using optimized vectorized operations.
 
@@ -437,6 +455,8 @@ def generate(
             batch_size=batch_size,
             seed=seed,
             show_progress=not no_progress,
+            max_file_size_mb=max_file_size_mb,
+            max_rows_per_file=max_rows_per_file,
         )
         # Calculate directory size for logging (output is always a directory now)
         total_size = sum(
@@ -637,6 +657,8 @@ def _save_with_high_performance_generator(
     batch_size: int = 10000,
     seed: int | None = None,
     show_progress: bool = True,
+    max_file_size_mb: int = 256,
+    max_rows_per_file: int = 1000000,
 ) -> None:
     """Save using high-performance vectorized generator optimized for large-scale data."""
     import time
@@ -684,6 +706,8 @@ def _save_with_high_performance_generator(
                     format=fmt,
                     batch_size=optimized_batch_size,
                     seed=seed,
+                    max_file_size_mb=max_file_size_mb,
+                    max_rows_per_file=max_rows_per_file,
                     progress_callback=update_progress,
                 )
 
@@ -698,6 +722,8 @@ def _save_with_high_performance_generator(
                 format=fmt,
                 batch_size=optimized_batch_size,
                 seed=seed,
+                max_file_size_mb=max_file_size_mb,
+                max_rows_per_file=max_rows_per_file,
             )
 
         # Log performance metrics
