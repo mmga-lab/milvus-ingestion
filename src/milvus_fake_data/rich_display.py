@@ -197,6 +197,26 @@ def display_success(message: str, details: str = "") -> None:
     )
 
 
+def display_info(message: str, details: str = "") -> None:
+    """Display info message with rich formatting.
+
+    Args:
+        message: Main info message
+        details: Additional details
+    """
+    console = Console()
+
+    info_text = f"[bold blue]ℹ[/bold blue] {message}"
+    if details:
+        info_text += f"\n[dim]{details}[/dim]"
+
+    console.print(
+        Panel(
+            info_text, border_style="blue", title="[bold blue]Info[/bold blue]"
+        )
+    )
+
+
 def display_schema_validation(schema_id: str, validation_info: dict[str, Any]) -> None:
     """Display schema validation results with rich formatting.
 

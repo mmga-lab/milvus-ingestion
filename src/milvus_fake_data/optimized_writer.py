@@ -31,10 +31,10 @@ def _estimate_row_size(fields: list[dict[str, Any]]) -> int:
     Estimates are conservative (slightly higher) to avoid exceeding size limits.
     """
     total_size = 0
-    
+
     for field in fields:
         field_type = field["type"]
-        
+
         if field_type == "Int8":
             total_size += 1
         elif field_type == "Int16":
@@ -55,7 +55,7 @@ def _estimate_row_size(fields: list[dict[str, Any]]) -> int:
         elif field_type == "Array":
             element_type = field.get("element_type", "Int32")
             max_capacity = field.get("max_capacity", 5)
-            
+
             if element_type in ["Int8"]:
                 element_size = 1
             elif element_type in ["Int16"]:
@@ -69,7 +69,7 @@ def _estimate_row_size(fields: list[dict[str, Any]]) -> int:
                 element_size = max_length * 2
             else:
                 element_size = 4  # Default
-                
+
             # Average array size (assume half capacity on average)
             total_size += (max_capacity // 2) * element_size + 8  # +8 for array overhead
         elif field_type == "FloatVector":
@@ -91,17 +91,17 @@ def _estimate_row_size(fields: list[dict[str, Any]]) -> int:
         else:
             # Unknown type, use conservative estimate
             total_size += 8
-    
+
     # Add overhead for serialization format (Parquet/JSON metadata, etc.)
     overhead = max(50, total_size // 10)  # At least 50 bytes or 10% overhead
-    
+
     return total_size + overhead
 
 
 def _estimate_row_size_from_sample(
-    fields: list[dict[str, Any]], 
-    sample_size: int, 
-    pk_offset: int, 
+    fields: list[dict[str, Any]],
+    sample_size: int,
+    pk_offset: int,
     format: str,
     seed: int | None = None
 ) -> float:
@@ -110,22 +110,22 @@ def _estimate_row_size_from_sample(
     This provides much more accurate estimation than theoretical calculations.
     """
     import tempfile
-    
+
     # Set seed for reproducible sampling
     if seed:
         np.random.seed(seed)
-    
+
     # Generate sample data using the same logic as the main generation
     data: dict[str, Any] = {}
-    
+
     # Generate scalar fields
     for field in fields:
         if "Vector" in field["type"]:
             continue  # Skip vectors for now, handle separately
-            
+
         field_name = field["name"]
         field_type = field["type"]
-        
+
         if field_type == "Int64":
             if field.get("is_primary", False) and not field.get("auto_id", False):
                 data[field_name] = np.arange(pk_offset, pk_offset + sample_size, dtype=np.int64)
@@ -154,7 +154,7 @@ def _estimate_row_size_from_sample(
             element_type = field.get("element_type", "Int32")
             max_capacity = field.get("max_capacity", 5)
             lengths = np.random.randint(0, max_capacity + 1, size=sample_size)
-            
+
             if element_type in ["Int32", "Int64"]:
                 total_elements = np.sum(lengths)
                 if total_elements > 0:
@@ -179,16 +179,16 @@ def _estimate_row_size_from_sample(
                     else:
                         array_data.append([])
                 data[field_name] = array_data
-    
+
     # Generate vector fields
     for field in fields:
         if "Vector" not in field["type"]:
             continue
-            
+
         field_name = field["name"]
         field_type = field["type"]
         dim = field.get("dim", 128)
-        
+
         if field_type == "FloatVector":
             vectors = np.random.randn(sample_size, dim).astype(np.float32)
             norms = np.linalg.norm(vectors, axis=1, keepdims=True)
@@ -205,7 +205,7 @@ def _estimate_row_size_from_sample(
             vectors = np.random.randn(sample_size, dim).astype(np.float32)
             norms = np.linalg.norm(vectors, axis=1, keepdims=True)
             vectors = vectors / norms
-            
+
             if field_type == "Float16Vector":
                 vectors_converted = vectors.astype(np.float16).view(np.uint8)
                 data[field_name] = list(vectors_converted.reshape(sample_size, -1))
@@ -213,10 +213,10 @@ def _estimate_row_size_from_sample(
                 vectors_converted = vectors.view(np.uint32)
                 vectors_converted = ((vectors_converted >> 16).astype(np.uint16).view(np.uint8))
                 data[field_name] = list(vectors_converted.reshape(sample_size, -1))
-    
+
     # Create DataFrame and measure its size
     df = pd.DataFrame(data)
-    
+
     # Write to temporary file and measure size
     with tempfile.NamedTemporaryFile(delete=True) as tmp_file:
         if format.lower() == "parquet":
@@ -240,19 +240,19 @@ def _estimate_row_size_from_sample(
                             record[key] = value.tolist()
                         elif isinstance(value, np.generic):
                             record[key] = value.item()
-                    
+
                     if i > 0:
                         f.write("\n")
                     json.dump(record, f, ensure_ascii=False, separators=(",", ":"))
-        
+
         # Get file size
         file_size = Path(tmp_file.name).stat().st_size
-        
+
     # Calculate bytes per row
     bytes_per_row = file_size / sample_size
-    
+
     logger.debug(f"Sample file size: {file_size:,} bytes for {sample_size:,} rows = {bytes_per_row:.1f} bytes/row")
-    
+
     return bytes_per_row
 
 
@@ -309,25 +309,25 @@ def generate_data_optimized(
 
     # Estimate rows per file based on file size constraint using real data sampling
     max_file_size_bytes = max_file_size_mb * 1024 * 1024
-    
+
     # Generate a sample to get accurate row size estimation
     # Use adaptive sampling: smaller sample for small datasets, larger for big datasets
     sample_size = min(max(1000, rows // 50), 10000)  # 1K-10K rows, 2% of data or 10K max
     logger.info(f"Sampling {sample_size:,} rows to estimate file size...")
-    
+
     actual_row_size_bytes = _estimate_row_size_from_sample(
         fields, sample_size, 0, format, seed  # Use 0 as initial pk_offset for sampling
     )
     estimated_rows_per_file_from_size = max(100, int(max_file_size_bytes // actual_row_size_bytes))
-    
+
     logger.info(
         f"Sample analysis: {actual_row_size_bytes:.1f} bytes/row (based on {sample_size:,} rows), "
         f"estimated {estimated_rows_per_file_from_size:,} rows for {max_file_size_mb}MB limit"
     )
-    
+
     # Use the more restrictive constraint (smaller value)
     effective_max_rows_per_file = min(max_rows_per_file, estimated_rows_per_file_from_size)
-    
+
     logger.info(
         f"File partitioning: max {max_rows_per_file:,} rows/file or {max_file_size_mb}MB/file, "
         f"using {effective_max_rows_per_file:,} rows/file"
