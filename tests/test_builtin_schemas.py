@@ -31,6 +31,8 @@ def test_list_builtin_schemas():
         "users",
         "videos",
         "news",
+        "ecommerce_partitioned",
+        "cardinality_demo",
     }
     assert set(schemas.keys()) == expected_schemas
 

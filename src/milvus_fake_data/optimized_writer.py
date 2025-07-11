@@ -126,22 +126,9 @@ def _estimate_row_size_from_sample(
         field_name = field["name"]
         field_type = field["type"]
 
-        if field_type == "Int64":
-            if field.get("is_primary", False) and not field.get("auto_id", False):
-                data[field_name] = np.arange(pk_offset, pk_offset + sample_size, dtype=np.int64)
-            else:
-                data[field_name] = np.random.randint(-999999, 999999, size=sample_size, dtype=np.int64)
-        elif field_type == "Float":
-            data[field_name] = np.random.random(sample_size).astype(np.float32)
-        elif field_type == "Double":
-            data[field_name] = np.random.random(sample_size).astype(np.float64)
-        elif field_type == "Bool":
-            data[field_name] = np.random.randint(0, 2, size=sample_size, dtype=bool)
-        elif field_type in ["VarChar", "String"]:
-            string_pool = [f"text_{i % 1000}" for i in range(1000)]
-            indices = np.random.randint(0, len(string_pool), size=sample_size)
-            string_array = np.array(string_pool)
-            data[field_name] = string_array[indices].tolist()
+        if field_type in ["Int8", "Int16", "Int32", "Int64", "Float", "Double", "Bool", "VarChar", "String"]:
+            # Use the new cardinality-aware generation function
+            data[field_name] = _generate_scalar_field_data(field, sample_size, pk_offset)
         elif field_type == "JSON":
             # Use simplified JSON for sampling (faster generation)
             ids = np.arange(pk_offset, pk_offset + sample_size)
@@ -256,6 +243,124 @@ def _estimate_row_size_from_sample(
     return bytes_per_row
 
 
+def _generate_scalar_field_data(
+    field: dict[str, Any],
+    num_rows: int,
+    pk_offset: int = 0
+) -> np.ndarray | list:
+    """
+    Generate data for a scalar field with support for cardinality and constraints.
+    
+    Args:
+        field: Field definition with type, constraints, and cardinality
+        num_rows: Number of rows to generate
+        pk_offset: Offset for primary key generation
+        
+    Returns:
+        Generated data as numpy array or list
+    """
+    field_name = field["name"]
+    field_type = field["type"]
+
+    # Handle primary key generation
+    if field.get("is_primary", False) and field_type == "Int64" and not field.get("auto_id", False):
+        return np.arange(pk_offset, pk_offset + num_rows, dtype=np.int64)
+
+    # Get constraints
+    min_val = field.get("min")
+    max_val = field.get("max")
+    cardinality_ratio = field.get("cardinality_ratio")
+    enum_values = field.get("enum_values")
+
+    # Handle enum values (highest priority)
+    if enum_values:
+        # Randomly select from enum values
+        indices = np.random.randint(0, len(enum_values), size=num_rows)
+        enum_array = np.array(enum_values)
+        return enum_array[indices]
+
+    # Handle cardinality ratio constraint
+    if cardinality_ratio is not None:
+        # Calculate number of unique values
+        num_unique = max(1, int(num_rows * cardinality_ratio))
+
+        # Generate based on field type
+        if field_type in ["Int8", "Int16", "Int32", "Int64"]:
+            # Set defaults based on type
+            type_ranges = {
+                "Int8": (-128, 127),
+                "Int16": (-32768, 32767),
+                "Int32": (-2147483648, 2147483647),
+                "Int64": (-999999, 999999)  # Limited range for readability
+            }
+            default_min, default_max = type_ranges[field_type]
+            min_val = min_val if min_val is not None else default_min
+            max_val = max_val if max_val is not None else default_max
+
+            # Generate unique values
+            unique_values = np.random.randint(min_val, max_val + 1, size=num_unique)
+            # Repeat to fill all rows
+            indices = np.random.randint(0, num_unique, size=num_rows)
+
+            # Convert to appropriate dtype
+            dtype_map = {"Int8": np.int8, "Int16": np.int16, "Int32": np.int32, "Int64": np.int64}
+            return unique_values[indices].astype(dtype_map[field_type])
+
+        elif field_type in ["Float", "Double"]:
+            min_val = min_val if min_val is not None else 0.0
+            max_val = max_val if max_val is not None else 1000.0
+
+            # Generate unique values
+            unique_values = np.random.uniform(min_val, max_val, size=num_unique)
+            # Repeat to fill all rows
+            indices = np.random.randint(0, num_unique, size=num_rows)
+            result = unique_values[indices]
+            return result.astype(np.float32) if field_type == "Float" else result
+
+        elif field_type in ["VarChar", "String"]:
+            # Generate string pool based on cardinality
+            string_pool = [f"{field_name}_{i}" for i in range(num_unique)]
+            indices = np.random.randint(0, len(string_pool), size=num_rows)
+            string_array = np.array(string_pool)
+            return string_array[indices].tolist()
+
+    # Default generation (no cardinality specified)
+    if field_type in ["Int8", "Int16", "Int32", "Int64"]:
+        type_info = {
+            "Int8": (np.int8, -128, 127),
+            "Int16": (np.int16, -32768, 32767),
+            "Int32": (np.int32, -2147483648, 2147483647),
+            "Int64": (np.int64, -999999, 999999)
+        }
+        dtype, default_min, default_max = type_info[field_type]
+        min_val = min_val if min_val is not None else default_min
+        max_val = max_val if max_val is not None else default_max
+        return np.random.randint(min_val, max_val + 1, size=num_rows, dtype=dtype)
+
+    elif field_type == "Float":
+        min_val = min_val if min_val is not None else 0.0
+        max_val = max_val if max_val is not None else 1.0
+        return np.random.uniform(min_val, max_val, size=num_rows).astype(np.float32)
+
+    elif field_type == "Double":
+        min_val = min_val if min_val is not None else 0.0
+        max_val = max_val if max_val is not None else 1.0
+        return np.random.uniform(min_val, max_val, size=num_rows)
+
+    elif field_type == "Bool":
+        return np.random.randint(0, 2, size=num_rows, dtype=bool)
+
+    elif field_type in ["VarChar", "String"]:
+        # Default string generation
+        string_pool = [f"text_{i % 1000}" for i in range(1000)]
+        indices = np.random.randint(0, len(string_pool), size=num_rows)
+        string_array = np.array(string_pool)
+        return string_array[indices].tolist()
+
+    else:
+        raise ValueError(f"Unsupported field type: {field_type}")
+
+
 def generate_data_optimized(
     schema_path: Path,
     rows: int,
@@ -358,42 +463,9 @@ def generate_data_optimized(
             field_name = field["name"]
             field_type = field["type"]
 
-            if field_type == "Int64":
-                if field.get("is_primary", False) and not field.get("auto_id", False):
-                    # Sequential IDs for primary key with offset
-                    data[field_name] = np.arange(
-                        pk_offset, pk_offset + current_batch_rows, dtype=np.int64
-                    )
-                else:
-                    data[field_name] = np.random.randint(
-                        -999999, 999999, size=current_batch_rows, dtype=np.int64
-                    )
-
-            elif field_type == "Float":
-                data[field_name] = np.random.random(current_batch_rows).astype(
-                    np.float32
-                )
-
-            elif field_type == "Double":
-                data[field_name] = np.random.random(current_batch_rows).astype(
-                    np.float64
-                )
-
-            elif field_type == "Bool":
-                data[field_name] = np.random.randint(
-                    0, 2, size=current_batch_rows, dtype=bool
-                )
-
-            elif field_type in ["VarChar", "String"]:
-                # Optimized vectorized string generation
-                string_pool = [f"text_{i % 1000}" for i in range(1000)]  # Reuse strings
-                indices = np.random.randint(
-                    0, len(string_pool), size=current_batch_rows
-                )
-                # Vectorized string selection using NumPy indexing
-                string_array = np.array(string_pool)
-                data[field_name] = string_array[indices].tolist()
-
+            if field_type in ["Int8", "Int16", "Int32", "Int64", "Float", "Double", "Bool", "VarChar", "String"]:
+                # Use the new cardinality-aware generation function
+                data[field_name] = _generate_scalar_field_data(field, current_batch_rows, pk_offset)
             elif field_type == "JSON":
                 # Generate diverse JSON data with multiple patterns
                 json_data = []

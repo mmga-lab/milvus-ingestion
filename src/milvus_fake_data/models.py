@@ -58,6 +58,9 @@ class FieldSchema(BaseModel):
     auto_id: bool = Field(
         default=False, description="Whether to auto-generate ID values"
     )
+    is_partition_key: bool = Field(
+        default=False, description="Whether this field is a partition key"
+    )
     nullable: bool = Field(default=False, description="Whether this field can be null")
 
     # Numeric field constraints
@@ -84,6 +87,18 @@ class FieldSchema(BaseModel):
     )
     max_capacity: int | None = Field(
         default=None, description="Maximum capacity for array fields", ge=1, le=4096
+    )
+
+    # Data distribution constraints (for scalar fields)
+    cardinality_ratio: float | None = Field(
+        default=None,
+        description="Ratio of unique values to total rows (0.0-1.0). Lower values create more duplicates.",
+        ge=0.0,
+        le=1.0
+    )
+    enum_values: list[str | int | float] | None = Field(
+        default=None,
+        description="Fixed set of values to randomly select from (overrides cardinality_ratio)"
     )
 
     @field_validator("name")
@@ -162,6 +177,19 @@ class FieldSchema(BaseModel):
                 f"These are only valid for numeric types (Int8, Int16, Int32, Int64, Float, Double)."
             )
 
+        # Validate cardinality constraints
+        if self.cardinality_ratio is not None or self.enum_values is not None:
+            # Cardinality constraints only apply to scalar types
+            scalar_types = {
+                FieldType.INT8, FieldType.INT16, FieldType.INT32, FieldType.INT64,
+                FieldType.FLOAT, FieldType.DOUBLE, FieldType.VARCHAR, FieldType.STRING
+            }
+            if self.type not in scalar_types:
+                raise ValueError(
+                    f"Field '{self.name}' with type '{self.type}' cannot have cardinality constraints. "
+                    f"cardinality_ratio and enum_values are only valid for scalar types."
+                                )
+
         if (
             field_type not in {"VARCHAR", "STRING"}
             and field_type != "ARRAY"
@@ -189,6 +217,9 @@ class CollectionSchema(BaseModel):
     )
     fields: list[FieldSchema] = Field(
         ..., description="List of field schemas", min_length=1
+    )
+    num_partitions: int | None = Field(
+        default=None, description="Number of partitions for the collection", ge=1, le=4096
     )
 
     @field_validator("collection_name")
@@ -236,6 +267,31 @@ class CollectionSchema(BaseModel):
                 f"Primary key field '{primary_field.name}' with auto_id=true must be of type Int64, not {primary_field.type}.\n"
                 "Change type to Int64 or set auto_id=false."
             )
+
+        # Validate partition key constraints
+        partition_key_fields = [f for f in self.fields if f.is_partition_key]
+        if len(partition_key_fields) > 1:
+            partition_names = [f.name for f in partition_key_fields]
+            raise ValueError(
+                f"Schema can have only one partition key field, but found {len(partition_key_fields)}: {', '.join(partition_names)}\n"
+                "Set is_partition_key=true for only one field."
+            )
+
+        if partition_key_fields:
+            partition_field = partition_key_fields[0]
+            # Partition key cannot be nullable
+            if partition_field.nullable:
+                raise ValueError(
+                    f"Partition key field '{partition_field.name}' cannot be nullable.\n"
+                    "Set nullable=false for partition key fields."
+                )
+            # Partition key must be scalar type (VARCHAR or INT64 are most common)
+            if partition_field.type not in {FieldType.VARCHAR, FieldType.INT8, FieldType.INT16,
+                                           FieldType.INT32, FieldType.INT64}:
+                raise ValueError(
+                    f"Partition key field '{partition_field.name}' must be a scalar type (VARCHAR or integer), not {partition_field.type}.\n"
+                    "Use VARCHAR or INT64 for partition keys."
+                )
 
         return self
 
