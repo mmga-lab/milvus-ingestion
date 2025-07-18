@@ -72,7 +72,11 @@ BUILTIN_SCHEMAS = {
     "ecommerce_partitioned": {
         "name": "E-commerce Multi-tenant",
         "description": "Multi-tenant e-commerce catalog with partition key for tenant isolation",
-        "use_cases": ["Multi-tenant SaaS", "Partitioned product search", "Tenant data isolation"],
+        "use_cases": [
+            "Multi-tenant SaaS",
+            "Partitioned product search",
+            "Tenant data isolation",
+        ],
         "fields_count": 13,
         "vector_dims": [768],
         "file": "ecommerce_partitioned.json",
@@ -80,7 +84,11 @@ BUILTIN_SCHEMAS = {
     "cardinality_demo": {
         "name": "Cardinality Demo",
         "description": "Demonstration of different data distribution patterns using cardinality_ratio and enum_values",
-        "use_cases": ["Data distribution testing", "Performance benchmarking", "Schema design examples"],
+        "use_cases": [
+            "Data distribution testing",
+            "Performance benchmarking",
+            "Schema design examples",
+        ],
         "fields_count": 10,
         "vector_dims": [128],
         "file": "cardinality_demo.json",

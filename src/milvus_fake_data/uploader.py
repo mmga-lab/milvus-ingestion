@@ -33,7 +33,7 @@ class S3Uploader:
         verify_ssl: bool = True,
     ):
         """Initialize S3 client.
-        
+
         Args:
             endpoint_url: S3-compatible endpoint URL (e.g., http://localhost:9000 for MinIO)
             access_key_id: AWS access key ID (can also be set via AWS_ACCESS_KEY_ID env var)
@@ -65,7 +65,7 @@ class S3Uploader:
                 extra={
                     "endpoint": endpoint_url or "AWS S3",
                     "region": region_name,
-                }
+                },
             )
         except Exception as e:
             self.logger.error(f"Failed to initialize S3 client: {e}")
@@ -79,13 +79,13 @@ class S3Uploader:
         show_progress: bool = True,
     ) -> dict[str, Any]:
         """Upload a directory to S3/MinIO.
-        
+
         Args:
             local_path: Local directory path containing files to upload
             bucket: S3 bucket name
             prefix: Optional prefix (folder) in the bucket
             show_progress: Whether to show upload progress
-            
+
         Returns:
             Dictionary with upload statistics
         """
@@ -125,13 +125,15 @@ class S3Uploader:
             ) as progress:
                 task = progress.add_task(
                     f"Uploading {len(files_to_upload)} files",
-                    total=len(files_to_upload)
+                    total=len(files_to_upload),
                 )
 
                 for file_path in files_to_upload:
                     # Calculate S3 key
                     relative_path = file_path.relative_to(local_path)
-                    relative_path_str = str(relative_path).replace("\\", "/")  # Convert to forward slashes
+                    relative_path_str = str(relative_path).replace(
+                        "\\", "/"
+                    )  # Convert to forward slashes
 
                     # Build S3 key, ensuring no double slashes
                     if prefix:
@@ -153,7 +155,9 @@ class S3Uploader:
             # Upload without progress bar
             for file_path in files_to_upload:
                 relative_path = file_path.relative_to(local_path)
-                relative_path_str = str(relative_path).replace("\\", "/")  # Convert to forward slashes
+                relative_path_str = str(relative_path).replace(
+                    "\\", "/"
+                )  # Convert to forward slashes
 
                 # Build S3 key, ensuring no double slashes
                 if prefix:
@@ -184,27 +188,33 @@ class S3Uploader:
             self.s3_client.head_bucket(Bucket=bucket)
             self.logger.debug(f"Bucket '{bucket}' exists")
         except ClientError as e:
-            error_code = e.response['Error']['Code']
-            if error_code == '404':
+            error_code = e.response["Error"]["Code"]
+            if error_code == "404":
                 # Bucket doesn't exist, create it
                 try:
-                    if self.endpoint_url and "amazonaws.com" not in (self.endpoint_url or ""):
+                    if self.endpoint_url and "amazonaws.com" not in (
+                        self.endpoint_url or ""
+                    ):
                         # For MinIO and other S3-compatible services
                         self.s3_client.create_bucket(Bucket=bucket)
                     else:
                         # For AWS S3, need to specify LocationConstraint for non-us-east-1
                         response = self.s3_client.get_bucket_location(Bucket=bucket)
-                        region = response.get('LocationConstraint', 'us-east-1')
-                        if region and region != 'us-east-1':
+                        region = response.get("LocationConstraint", "us-east-1")
+                        if region and region != "us-east-1":
                             self.s3_client.create_bucket(
                                 Bucket=bucket,
-                                CreateBucketConfiguration={'LocationConstraint': region}
+                                CreateBucketConfiguration={
+                                    "LocationConstraint": region
+                                },
                             )
                         else:
                             self.s3_client.create_bucket(Bucket=bucket)
                     self.logger.info(f"Created bucket '{bucket}'")
                 except Exception as create_error:
-                    self.logger.error(f"Failed to create bucket '{bucket}': {create_error}")
+                    self.logger.error(
+                        f"Failed to create bucket '{bucket}': {create_error}"
+                    )
                     raise
             else:
                 # Other error
@@ -214,7 +224,7 @@ class S3Uploader:
     def _upload_file(self, file_path: Path, bucket: str, key: str) -> None:
         """Upload a single file to S3."""
         try:
-            with open(file_path, 'rb') as file_data:
+            with open(file_path, "rb") as file_data:
                 self.s3_client.put_object(
                     Bucket=bucket,
                     Key=key,
@@ -254,10 +264,10 @@ class S3Uploader:
 
 def parse_s3_url(url: str) -> tuple[str, str]:
     """Parse S3 URL into bucket and prefix.
-    
+
     Args:
         url: S3 URL in format s3://bucket/prefix or s3://bucket
-        
+
     Returns:
         Tuple of (bucket, prefix)
     """

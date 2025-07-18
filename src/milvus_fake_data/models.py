@@ -29,7 +29,6 @@ class FieldType(str, Enum):
     BINARY_VECTOR = "BinaryVector"
     FLOAT16_VECTOR = "Float16Vector"
     BFLOAT16_VECTOR = "BFloat16Vector"
-    INT8_VECTOR = "Int8Vector"
     SPARSE_FLOAT_VECTOR = "SparseFloatVector"
 
 
@@ -94,11 +93,11 @@ class FieldSchema(BaseModel):
         default=None,
         description="Ratio of unique values to total rows (0.0-1.0). Lower values create more duplicates.",
         ge=0.0,
-        le=1.0
+        le=1.0,
     )
     enum_values: list[str | int | float] | None = Field(
         default=None,
-        description="Fixed set of values to randomly select from (overrides cardinality_ratio)"
+        description="Fixed set of values to randomly select from (overrides cardinality_ratio)",
     )
 
     @field_validator("name")
@@ -133,11 +132,22 @@ class FieldSchema(BaseModel):
                 f'Example: {{"name": "{self.name}", "type": "{self.type}", "max_length": 128}}'
             )
 
-        # Vector fields must have dim
-        if "VECTOR" in field_type and self.dim is None:
+        # Vector fields must have dim (except SparseFloatVector)
+        if (
+            "VECTOR" in field_type
+            and field_type != "SPARSEFLOATVECTOR"
+            and self.dim is None
+        ):
             raise ValueError(
                 f"Field '{self.name}' with type '{self.type}' must specify dim (dimension).\n"
                 f'Example: {{"name": "{self.name}", "type": "{self.type}", "dim": 128}}'
+            )
+
+        # SparseFloatVector should not have dim
+        if field_type == "SPARSEFLOATVECTOR" and self.dim is not None:
+            raise ValueError(
+                f"Field '{self.name}' with type 'SparseFloatVector' should not specify dim.\n"
+                f'Example: {{"name": "{self.name}", "type": "SparseFloatVector"}}'
             )
 
         # Array fields must have element_type and max_capacity
@@ -181,14 +191,20 @@ class FieldSchema(BaseModel):
         if self.cardinality_ratio is not None or self.enum_values is not None:
             # Cardinality constraints only apply to scalar types
             scalar_types = {
-                FieldType.INT8, FieldType.INT16, FieldType.INT32, FieldType.INT64,
-                FieldType.FLOAT, FieldType.DOUBLE, FieldType.VARCHAR, FieldType.STRING
+                FieldType.INT8,
+                FieldType.INT16,
+                FieldType.INT32,
+                FieldType.INT64,
+                FieldType.FLOAT,
+                FieldType.DOUBLE,
+                FieldType.VARCHAR,
+                FieldType.STRING,
             }
             if self.type not in scalar_types:
                 raise ValueError(
                     f"Field '{self.name}' with type '{self.type}' cannot have cardinality constraints. "
                     f"cardinality_ratio and enum_values are only valid for scalar types."
-                                )
+                )
 
         if (
             field_type not in {"VARCHAR", "STRING"}
@@ -219,7 +235,10 @@ class CollectionSchema(BaseModel):
         ..., description="List of field schemas", min_length=1
     )
     num_partitions: int | None = Field(
-        default=None, description="Number of partitions for the collection", ge=1, le=4096
+        default=None,
+        description="Number of partitions for the collection",
+        ge=1,
+        le=4096,
     )
 
     @field_validator("collection_name")
@@ -286,8 +305,13 @@ class CollectionSchema(BaseModel):
                     "Set nullable=false for partition key fields."
                 )
             # Partition key must be scalar type (VARCHAR or INT64 are most common)
-            if partition_field.type not in {FieldType.VARCHAR, FieldType.INT8, FieldType.INT16,
-                                           FieldType.INT32, FieldType.INT64}:
+            if partition_field.type not in {
+                FieldType.VARCHAR,
+                FieldType.INT8,
+                FieldType.INT16,
+                FieldType.INT32,
+                FieldType.INT64,
+            }:
                 raise ValueError(
                     f"Partition key field '{partition_field.name}' must be a scalar type (VARCHAR or integer), not {partition_field.type}.\n"
                     "Use VARCHAR or INT64 for partition keys."
@@ -357,7 +381,6 @@ def get_schema_help() -> str:
 - **BinaryVector**: Binary vectors
 - **Float16Vector**: 16-bit float vectors
 - **BFloat16Vector**: Brain float vectors
-- **Int8Vector**: 8-bit integer vectors
 - **SparseFloatVector**: Sparse float vectors
 - Required: `dim` (dimension, 1-32768)
 

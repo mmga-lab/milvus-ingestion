@@ -211,9 +211,7 @@ def display_info(message: str, details: str = "") -> None:
         info_text += f"\n[dim]{details}[/dim]"
 
     console.print(
-        Panel(
-            info_text, border_style="blue", title="[bold blue]Info[/bold blue]"
-        )
+        Panel(info_text, border_style="blue", title="[bold blue]Info[/bold blue]")
     )
 
 

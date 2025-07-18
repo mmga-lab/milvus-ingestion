@@ -45,7 +45,7 @@ from .logging_config import (
     log_performance,
     setup_logging,
 )
-from .milvus_importer import MilvusImporter
+from .milvus_inserter import MilvusInserter
 from .models import get_schema_help, validate_schema_data
 from .rich_display import (
     display_confirmation_prompt,
@@ -58,7 +58,6 @@ from .rich_display import (
 )
 from .schema_manager import get_schema_manager
 from .uploader import S3Uploader, parse_s3_url
-from .zilliz_importer import ZillizImporter
 
 _OUTPUT_FORMATS = {"parquet", "json"}
 
@@ -653,7 +652,10 @@ def clean(yes: bool = False) -> None:
 
 
 @main.command()
-@click.argument("source", type=click.Path(exists=True, dir_okay=True, file_okay=False, path_type=Path))
+@click.argument(
+    "source",
+    type=click.Path(exists=True, dir_okay=True, file_okay=False, path_type=Path),
+)
 @click.argument("destination")
 @click.option(
     "--endpoint-url",
@@ -745,8 +747,10 @@ def upload(
 
         if result["failed_files"]:
             display_error(
-                f"Failed to upload {len(result['failed_files'])} files:\n" +
-                "\n".join(f"  - {f['file']}: {f['error']}" for f in result["failed_files"])
+                f"Failed to upload {len(result['failed_files'])} files:\n"
+                + "\n".join(
+                    f"  - {f['file']}: {f['error']}" for f in result["failed_files"]
+                )
             )
 
     except ValueError as e:
@@ -754,32 +758,32 @@ def upload(
         ctx = click.get_current_context()
         click.echo(ctx.get_help())
     except Exception as e:
-        log_error_with_context(logger, e, {"source": str(source), "destination": destination})
+        log_error_with_context(
+            logger, e, {"source": str(source), "destination": destination}
+        )
         display_error(f"Upload failed: {e}")
 
 
-@main.command("to-milvus")
-@click.argument("data_path", type=click.Path(exists=True, dir_okay=True, file_okay=False, path_type=Path))
-@click.option(
-    "--host",
-    default="localhost",
-    help="Milvus server host (default: localhost)",
+@main.group(name="to-milvus")
+def to_milvus() -> None:
+    """Send data to Milvus using different methods."""
+    pass
+
+
+@to_milvus.command("insert")
+@click.argument(
+    "data_path",
+    type=click.Path(exists=True, dir_okay=True, file_okay=False, path_type=Path),
 )
 @click.option(
-    "--port",
-    default=19530,
-    type=int,
-    help="Milvus server port (default: 19530)",
+    "--uri",
+    default="http://localhost:19530",
+    help="Milvus server URI (default: http://localhost:19530)",
 )
 @click.option(
-    "--user",
+    "--token",
     default="",
-    help="Username for authentication",
-)
-@click.option(
-    "--password",
-    default="",
-    help="Password for authentication",
+    help="Token for authentication",
 )
 @click.option(
     "--db-name",
@@ -811,12 +815,10 @@ def upload(
     is_flag=True,
     help="Disable progress bar during import",
 )
-def to_milvus(
+def insert_to_milvus(
     data_path: Path,
-    host: str = "localhost",
-    port: int = 19530,
-    user: str = "",
-    password: str = "",
+    uri: str = "http://localhost:19530",
+    token: str = "",
     db_name: str = "default",
     collection_name: str | None = None,
     drop_if_exists: bool = False,
@@ -824,165 +826,40 @@ def to_milvus(
     batch_size: int = 10000,
     no_progress: bool = False,
 ) -> None:
-    """Import generated data to Milvus.
-    
+    """Insert generated data directly to Milvus.
+
     \b
     Examples:
-        # Import to local Milvus
-        milvus-fake-data to-milvus ./output
-        
-        # Import to remote Milvus with auth
-        milvus-fake-data to-milvus ./output --host 192.168.1.100 --user root --password Milvus
-        
+        # Insert to local Milvus
+        milvus-fake-data to-milvus insert ./output
+
+        # Insert to remote Milvus with token
+        milvus-fake-data to-milvus insert ./output --uri http://192.168.1.100:19530 --token your_token
+
         # Drop existing collection and recreate
-        milvus-fake-data to-milvus ./output --drop-if-exists
-        
-        # Import with custom collection name
-        milvus-fake-data to-milvus ./output --collection-name my_collection
+        milvus-fake-data to-milvus insert ./output --drop-if-exists
+
+        # Insert with custom collection name
+        milvus-fake-data to-milvus insert ./output --collection-name my_collection
     """
     logger = get_logger(__name__)
 
     try:
-        # Create importer
-        importer = MilvusImporter(
-            host=host,
-            port=port,
-            user=user,
-            password=password,
-            db_name=db_name,
-        )
-
-        # Test connection
-        click.echo("Testing Milvus connection...")
-        if not importer.test_connection():
-            return
-
-        # Import data
-        click.echo(f"Importing data from {data_path} to Milvus...")
-        result = importer.import_data(
-            data_path=data_path,
-            collection_name=collection_name,
-            drop_if_exists=drop_if_exists,
-            create_index=not no_index,
-            batch_size=batch_size,
-            show_progress=not no_progress,
-        )
-
-        # Display results
-        if result["total_inserted"] > 0:
-            display_success(
-                f"Successfully imported {result['total_inserted']:,} rows to collection '{result['collection_name']}'",
-                details=f"Indexes created: {len(result['indexes_created'])}"
-            )
-
-        if result["failed_batches"]:
-            display_error(
-                f"Failed to import {len(result['failed_batches'])} batches:\n" +
-                "\n".join(f"  - {b['file']} batch {b['batch']}: {b['error']}" for b in result["failed_batches"])
-            )
-
-        # Close connection
-        importer.close()
-
-    except ValueError as e:
-        display_error(f"Invalid input: {e}")
-    except Exception as e:
-        log_error_with_context(logger, e, {"data_path": str(data_path), "host": host, "port": port})
-        display_error(f"Import failed: {e}")
-
-
-@main.command("to-zilliz")
-@click.argument("data_path", type=click.Path(exists=True, dir_okay=True, file_okay=False, path_type=Path))
-@click.option(
-    "--uri",
-    required=True,
-    help="Zilliz Cloud cluster endpoint (e.g., https://in03-xxx.api.gcp-us-west1.zillizcloud.com)",
-)
-@click.option(
-    "--token",
-    required=True,
-    help="API token for authentication",
-)
-@click.option(
-    "--db-name",
-    default="default",
-    help="Database name (default: default)",
-)
-@click.option(
-    "--collection-name",
-    help="Override collection name from metadata",
-)
-@click.option(
-    "--drop-if-exists",
-    is_flag=True,
-    help="Drop collection if it already exists",
-)
-@click.option(
-    "--no-index",
-    is_flag=True,
-    help="Skip creating indexes on vector fields",
-)
-@click.option(
-    "--batch-size",
-    default=5000,
-    type=int,
-    help="Batch size for inserting data (default: 5000)",
-)
-@click.option(
-    "--no-progress",
-    is_flag=True,
-    help="Disable progress bar during import",
-)
-def to_zilliz(
-    data_path: Path,
-    uri: str,
-    token: str,
-    db_name: str = "default",
-    collection_name: str | None = None,
-    drop_if_exists: bool = False,
-    no_index: bool = False,
-    batch_size: int = 5000,
-    no_progress: bool = False,
-) -> None:
-    """Import generated data to Zilliz Cloud.
-    
-    \b
-    Examples:
-        # Import to Zilliz Cloud
-        milvus-fake-data to-zilliz ./output \\
-            --uri https://in03-xxx.api.gcp-us-west1.zillizcloud.com \\
-            --token your-api-token
-        
-        # Drop existing collection and recreate
-        milvus-fake-data to-zilliz ./output \\
-            --uri https://in03-xxx.api.gcp-us-west1.zillizcloud.com \\
-            --token your-api-token \\
-            --drop-if-exists
-        
-        # Import with custom collection name
-        milvus-fake-data to-zilliz ./output \\
-            --uri https://in03-xxx.api.gcp-us-west1.zillizcloud.com \\
-            --token your-api-token \\
-            --collection-name my_collection
-    """
-    logger = get_logger(__name__)
-
-    try:
-        # Create importer
-        importer = ZillizImporter(
+        # Create inserter
+        inserter = MilvusInserter(
             uri=uri,
             token=token,
             db_name=db_name,
         )
 
         # Test connection
-        click.echo("Testing Zilliz Cloud connection...")
-        if not importer.test_connection():
+        click.echo("Testing Milvus connection...")
+        if not inserter.test_connection():
             return
 
-        # Import data
-        click.echo(f"Importing data from {data_path} to Zilliz Cloud...")
-        result = importer.import_data(
+        # Insert data
+        click.echo(f"Inserting data from {data_path} to Milvus...")
+        result = inserter.insert_data(
             data_path=data_path,
             collection_name=collection_name,
             drop_if_exists=drop_if_exists,
@@ -994,24 +871,104 @@ def to_zilliz(
         # Display results
         if result["total_inserted"] > 0:
             display_success(
-                f"Successfully imported {result['total_inserted']:,} rows to collection '{result['collection_name']}' on Zilliz Cloud",
-                details=f"Cluster: {result['cluster_endpoint']}\nIndexes created: {len(result['indexes_created'])}"
+                f"Successfully inserted {result['total_inserted']:,} rows to collection '{result['collection_name']}'",
+                details=f"Indexes created: {len(result['indexes_created'])}",
             )
 
         if result["failed_batches"]:
             display_error(
-                f"Failed to import {len(result['failed_batches'])} batches:\n" +
-                "\n".join(f"  - {b['file']} batch {b['batch']}: {b['error']}" for b in result["failed_batches"])
+                f"Failed to insert {len(result['failed_batches'])} batches:\n"
+                + "\n".join(
+                    f"  - {b['file']} batch {b['batch']}: {b['error']}"
+                    for b in result["failed_batches"]
+                )
             )
 
         # Close connection
-        importer.close()
+        inserter.close()
 
     except ValueError as e:
         display_error(f"Invalid input: {e}")
     except Exception as e:
         log_error_with_context(logger, e, {"data_path": str(data_path), "uri": uri})
+        display_error(f"Insert failed: {e}")
+
+
+@to_milvus.command("import")
+@click.argument("collection", type=str)
+@click.argument("files", type=str, nargs=-1, required=True)
+@click.option(
+    "--uri",
+    default="http://127.0.0.1:19530",
+    help="Milvus instance URI (default: http://127.0.0.1:19530)",
+)
+@click.option(
+    "--token",
+    default="",
+    help="Token for authentication",
+)
+@click.option(
+    "--wait",
+    is_flag=True,
+    help="Wait for import to complete",
+)
+@click.option(
+    "--timeout",
+    type=int,
+    help="Timeout in seconds when waiting (no timeout by default)",
+)
+def import_to_milvus(
+    collection: str,
+    files: tuple[str, ...],
+    uri: str = "http://127.0.0.1:19530",
+    token: str = "",
+    wait: bool = False,
+    timeout: int | None = None,
+) -> None:
+    """Start bulk import of files to Milvus collection from MinIO/S3.
+
+    \b
+    Examples:
+        # Import single file
+        milvus-fake-data to-milvus import my_collection data.parquet
+
+        # Import multiple files
+        milvus-fake-data to-milvus import my_collection file1.parquet file2.parquet
+
+        # Import all files from directory
+        milvus-fake-data to-milvus import my_collection ./output/
+
+        # Import and wait for completion
+        milvus-fake-data to-milvus import my_collection ./output/ --wait
+
+        # Import with custom Milvus URI
+        milvus-fake-data to-milvus import my_collection data.parquet --uri http://192.168.1.100:19530
+    """
+    from .milvus_importer import MilvusBulkImporter, prepare_file_paths
+
+    try:
+        # Create bulk importer
+        importer = MilvusBulkImporter(uri=uri, token=token)
+
+        # Prepare file paths
+        file_paths = prepare_file_paths(list(files))
+
+        # Start import
+        job_id = importer.bulk_import_files(
+            collection_name=collection,
+            files=file_paths,
+            show_progress=True,
+        )
+
+        # Wait for completion if requested
+        if wait:
+            success = importer.wait_for_completion(job_id, timeout=timeout or 300)
+            if not success:
+                raise SystemExit(1)
+
+    except Exception as e:
         display_error(f"Import failed: {e}")
+        raise SystemExit(1)
 
 
 def _save_with_high_performance_generator(

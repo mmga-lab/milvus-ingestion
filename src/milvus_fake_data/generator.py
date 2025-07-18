@@ -39,6 +39,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from faker import Faker
+from ml_dtypes import bfloat16
 from pydantic import ValidationError
 from rich.progress import (
     BarColumn,
@@ -297,7 +298,7 @@ def generate_mock_data(
         else:
             fields = validated_schema.fields
         columns = [f.name for f in fields if not f.auto_id]
-        return pd.DataFrame(columns=columns)
+        return pd.DataFrame(columns=pd.Index(columns))
 
     return pd.concat(batches, ignore_index=True)
 
@@ -319,7 +320,11 @@ def _gen_value_by_field(field: dict[str, Any]) -> Any:
     f_type = field["type"].upper()
     # Canonicalize vector type names like FLOATVECTOR -> FLOAT_VECTOR
     if "VECTOR" in f_type and "_VECTOR" not in f_type:
-        f_type = f_type.replace("VECTOR", "_VECTOR")
+        # Handle special case for SparseFloatVector
+        if f_type == "SPARSEFLOATVECTOR":
+            f_type = "SPARSE_FLOAT_VECTOR"
+        else:
+            f_type = f_type.replace("VECTOR", "_VECTOR")
     dim = int(field.get("dim", 8))
     max_length = int(field.get("max_length", 128))
     if f_type == "BOOL":
@@ -348,18 +353,33 @@ def _gen_value_by_field(field: dict[str, Any]) -> Any:
         return [_gen_value_by_field(element_field) for _ in range(arr_len)]
     # Vector types
     if f_type == "BINARY_VECTOR":
-        return np.random.randint(0, 2, dim).astype(np.int8).tolist()
-    if f_type == "INT8_VECTOR":
-        return np.random.randint(0, 256, dim).astype(np.int8).tolist()
+        # Binary vector: each int represents 8 dimensions
+        # If binary vector dimension is 16, use [x, y] where x and y are 0-255
+        byte_dim = dim // 8
+        return [random.randint(0, 255) for _ in range(byte_dim)]
     if f_type in {"FLOAT_VECTOR", "FLOAT16_VECTOR", "BFLOAT16_VECTOR"}:
-        dtype = (
-            np.float16
-            if f_type in {"FLOAT16_VECTOR", "BFLOAT16_VECTOR"}
-            else np.float32
-        )
-        return np.random.random(dim).astype(dtype).tolist()
+        if f_type == "FLOAT_VECTOR":
+            dtype = np.float32
+            return np.random.random(dim).astype(dtype).tolist()
+        elif f_type == "FLOAT16_VECTOR":
+            # Generate float16 vector data using uint8 representation
+            raw_vector = [random.random() for _ in range(dim)]
+            fp16_vector = np.array(raw_vector, dtype=np.float16).view(np.uint8).tolist()
+            return fp16_vector
+        elif f_type == "BFLOAT16_VECTOR":
+            # Generate bfloat16 vector data using uint8 representation
+            raw_vector = [random.random() for _ in range(dim)]
+            bf16_vector = np.array(raw_vector, dtype=bfloat16).view(np.uint8).tolist()
+            return bf16_vector
     if f_type == "SPARSE_FLOAT_VECTOR":
-        return np.random.randint(0, 2, dim).astype(np.int8).tolist()
+        # Generate sparse float vector as dict with indices as keys and values as floats
+        # Use default dimension of 1000 for sparse vectors, with ~10% density
+        max_dim = 1000
+        non_zero_count = random.randint(10, max_dim // 10)  # 10-100 non-zero values
+        indices = random.sample(range(max_dim), non_zero_count)
+        values = [random.random() for _ in range(non_zero_count)]
+        sparse_vector = {str(index): value for index, value in zip(indices, values)}
+        return sparse_vector
     raise ValueError(f"Unsupported field type: {f_type}")
 
 
