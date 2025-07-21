@@ -305,10 +305,7 @@ class MilvusInserter:
                     )
                 else:
                     # Determine metric type based on vector type
-                    if field_type == "BinaryVector":
-                        metric_type = "HAMMING"
-                    else:
-                        metric_type = "L2"
+                    metric_type = "HAMMING" if field_type == "BinaryVector" else "L2"
 
                     # Add index for vector field
                     index_params.add_index(
@@ -338,10 +335,7 @@ class MilvusInserter:
                     )
                 else:
                     # Determine metric type based on vector type
-                    if field_type == "BinaryVector":
-                        metric_type = "HAMMING"
-                    else:
-                        metric_type = "L2"
+                    metric_type = "HAMMING" if field_type == "BinaryVector" else "L2"
 
                     index_info.append(
                         {
@@ -431,11 +425,12 @@ class MilvusInserter:
                         # JSON stored as string in Parquet - convert back to dict for insert
                         try:
                             import json
+
                             record[field_name] = json.loads(value)
                         except (json.JSONDecodeError, TypeError):
                             # If parsing fails, treat as string
                             record[field_name] = value
-                    elif isinstance(value, (dict, list)):
+                    elif isinstance(value, dict | list):
                         # Already a JSON object
                         record[field_name] = value
                     else:
@@ -461,15 +456,20 @@ class MilvusInserter:
 
         if field_type == "Float16Vector":
             # Convert data to float16 numpy array
-            if isinstance(vector_data, (list, np.ndarray)):
+            if isinstance(vector_data, list | np.ndarray):
                 # First ensure it's uint8
-                if isinstance(vector_data, np.ndarray) and vector_data.dtype != np.uint8:
+                if (
+                    isinstance(vector_data, np.ndarray)
+                    and vector_data.dtype != np.uint8
+                ):
                     uint8_array = vector_data.astype(np.uint8)
                 else:
                     uint8_array = np.array(vector_data, dtype=np.uint8)
                 # Then view as float16
                 float16_array = uint8_array.view(np.float16)
-                return np.ascontiguousarray(float16_array)  # Return numpy array for Milvus
+                return np.ascontiguousarray(
+                    float16_array
+                )  # Return numpy array for Milvus
             return vector_data
         elif field_type == "BFloat16Vector":
             # Convert data to bfloat16 numpy array
@@ -483,21 +483,29 @@ class MilvusInserter:
                 )
                 return vector_data
 
-            if isinstance(vector_data, (list, np.ndarray)):
+            if isinstance(vector_data, list | np.ndarray):
                 # First ensure it's uint8
-                if isinstance(vector_data, np.ndarray) and vector_data.dtype != np.uint8:
+                if (
+                    isinstance(vector_data, np.ndarray)
+                    and vector_data.dtype != np.uint8
+                ):
                     uint8_array = vector_data.astype(np.uint8)
                 else:
                     uint8_array = np.array(vector_data, dtype=np.uint8)
                 # Then view as bfloat16
                 bfloat16_array = uint8_array.view(bfloat16)
-                return np.ascontiguousarray(bfloat16_array)  # Return numpy array for Milvus
+                return np.ascontiguousarray(
+                    bfloat16_array
+                )  # Return numpy array for Milvus
             return vector_data
         elif field_type == "BinaryVector":
             # Convert data to bytes
-            if isinstance(vector_data, (list, np.ndarray)):
+            if isinstance(vector_data, list | np.ndarray):
                 # First ensure it's uint8
-                if isinstance(vector_data, np.ndarray) and vector_data.dtype != np.uint8:
+                if (
+                    isinstance(vector_data, np.ndarray)
+                    and vector_data.dtype != np.uint8
+                ):
                     uint8_array = vector_data.astype(np.uint8)
                 else:
                     uint8_array = np.array(vector_data, dtype=np.uint8)

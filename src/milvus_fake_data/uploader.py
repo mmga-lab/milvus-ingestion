@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from pathlib import Path  # noqa: TC003
 from typing import Any
 from urllib.parse import urlparse
 
@@ -231,11 +231,11 @@ class S3Uploader:
                     Body=file_data,
                 )
             self.logger.debug(f"Uploaded {file_path} to s3://{bucket}/{key}")
-        except NoCredentialsError:
+        except NoCredentialsError as e:
             raise ValueError(
                 "No credentials found. Please provide access_key_id and secret_access_key "
                 "or set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables."
-            )
+            ) from e
         except Exception as e:
             self.logger.error(f"Failed to upload {file_path}: {e}")
             raise

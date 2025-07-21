@@ -336,8 +336,8 @@ def _gen_value_by_field(field: dict[str, Any]) -> Any:
         low, high = field.get("min", 0.0), field.get("max", 1_000.0)
         return random.uniform(low, high)
     if f_type in {"VARCHAR", "STRING"}:
-        # Use 80% of max_length to avoid hitting the limit
-        safe_max_length = int(max_length * 0.8)
+        # Use 80% of max_length to avoid hitting the limit, minimum 5 chars for faker
+        safe_max_length = max(5, int(max_length * 0.8))
         return faker.text(max_nb_chars=safe_max_length)
     if f_type == "JSON":
         return {"key": faker.text(max_nb_chars=16)}
@@ -378,7 +378,9 @@ def _gen_value_by_field(field: dict[str, Any]) -> Any:
         non_zero_count = random.randint(10, max_dim // 10)  # 10-100 non-zero values
         indices = random.sample(range(max_dim), non_zero_count)
         values = [random.random() for _ in range(non_zero_count)]
-        sparse_vector = {str(index): value for index, value in zip(indices, values, strict=False)}
+        sparse_vector = {
+            str(index): value for index, value in zip(indices, values, strict=False)
+        }
         return sparse_vector
     raise ValueError(f"Unsupported field type: {f_type}")
 

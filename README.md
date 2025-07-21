@@ -27,13 +27,16 @@
 ## Installation
 
 ```bash
-# Install from PyPI (when published)
-pip install milvus-fake-data
-
-# Or install from source
-git clone https://github.com/your-org/milvus-fake-data.git
+# Install from source (recommended for development)
+git clone https://github.com/zilliz/milvus-fake-data.git
 cd milvus-fake-data
-pdm install
+pdm install  # Installs with development dependencies
+
+# For production use only
+pdm install --prod
+
+# After installation, the CLI tool is available as:
+milvus-fake-data --help
 ```
 
 ## 🚀 Quick Start
@@ -66,6 +69,8 @@ milvus-fake-data generate --builtin ecommerce --rows 2500000 --out products/
 | `audio_transcripts` | Audio transcription with FP16 embeddings | Speech-to-text search, podcasts |
 | `ai_conversations` | AI chat history with BF16 embeddings | Chatbot analytics, conversation search |
 | `face_recognition` | Facial recognition with binary vectors | Security systems, identity verification |
+| `ecommerce_partitioned` | Partitioned e-commerce schema | Scalable product catalogs |
+| `cardinality_demo` | Schema demonstrating cardinality features | Testing cardinality constraints |
 
 ### 2. Create Custom Schemas
 
@@ -125,7 +130,7 @@ milvus-fake-data schema show my_products
 from milvus_fake_data.generator import generate_mock_data
 from milvus_fake_data.schema_manager import get_schema_manager
 from milvus_fake_data.builtin_schemas import load_builtin_schema
-from tempfile import NamedTemporaryFile
+import tempfile
 import json
 
 # Use the schema manager to work with schemas
@@ -136,15 +141,21 @@ all_schemas = manager.list_all_schemas()
 print("Available schemas:", list(all_schemas.keys()))
 
 # Load any schema (built-in or custom)
-schema = manager.load_schema("ecommerce")  # Built-in
-# schema = manager.load_schema("my_products")  # Custom
+schema = manager.get_schema("ecommerce")  # Built-in
+# schema = manager.get_schema("my_products")  # Custom
 
-# Generate data from schema (high-performance optimized)
-with NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-    json.dump(schema, f)
-    df = generate_mock_data(f.name, rows=100000, seed=42)
+# Generate data from schema file
+with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+    json.dump(schema, f, indent=2)
+    f.flush()
+    
+    # Generate data (returns dict with DataFrame and metadata)
+    result = generate_mock_data(f.name, rows=10000, seed=42, output_format="dict")
+    df = result["data"]
+    metadata = result["metadata"]
 
 print(df.head())
+print(f"Generated {len(df)} rows for collection: {metadata['collection_name']}")
 
 # Add a custom schema programmatically
 custom_schema = {
@@ -178,7 +189,6 @@ print("Added custom schema!")
 | `BinaryVector` | Binary vectors | `dim` | - |
 | `Float16Vector` | 16-bit float vectors | `dim` | - |
 | `BFloat16Vector` | Brain float vectors | `dim` | - |
-| `Int8Vector` | 8-bit integer vectors | `dim` | - |
 | `SparseFloatVector` | Sparse float vectors | `dim` | - |
 | **Complex Types** | | | |
 | `Array` | Array of elements | `element_type`, `max_capacity` | `max_length` (for string elements) |
@@ -488,18 +498,31 @@ make lint test                   # Run linting and tests together
 
 ```
 src/milvus_fake_data/
-├── cli.py              # High-performance CLI interface
+├── cli.py              # Click-based CLI interface
 ├── generator.py        # Core data generation logic  
-├── optimized_writer.py # Vectorized data generation with file partitioning
-├── models.py           # Pydantic validation models
+├── optimized_writer.py # High-performance vectorized data generation
+├── models.py           # Pydantic schema validation models
 ├── schema_manager.py   # Schema management system
-├── builtin_schemas.py  # Built-in schema definitions
-├── rich_display.py     # Terminal formatting
-├── logging_config.py   # Structured logging
-└── schemas/            # Built-in schema files
+├── builtin_schemas.py  # Built-in schema definitions and metadata
+├── rich_display.py     # Rich terminal formatting and UI
+├── logging_config.py   # Loguru-based structured logging
+├── exceptions.py       # Custom exception classes
+├── uploader.py         # S3/MinIO upload functionality
+├── milvus_inserter.py  # Direct Milvus insertion
+├── milvus_importer.py  # Bulk import from S3/MinIO
+└── schemas/            # Built-in schema JSON files (12 schemas)
     ├── simple.json
     ├── ecommerce.json
-    └── ...
+    ├── documents.json
+    ├── images.json
+    ├── users.json
+    ├── videos.json
+    ├── news.json
+    ├── audio_transcripts.json
+    ├── ai_conversations.json
+    ├── face_recognition.json
+    ├── ecommerce_partitioned.json
+    └── cardinality_demo.json
 ```
 
 ## 📊 Performance Benchmarks

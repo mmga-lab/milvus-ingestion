@@ -9,11 +9,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 pdm install        # Install with development dependencies (default behavior)
 pdm install --prod # Install production dependencies only
 ```
-### Running Python Scripts
-```bash
-pdm run python                    # Interactive Python with project dependencies
-pdm run python script.py          # Run a Python script with project dependencies
-```
 
 ### Code Quality & Testing
 ```bash
@@ -35,28 +30,39 @@ pdm run pytest -v -s                                    # Verbose output with pr
 pdm run pytest -m "not slow"                            # Skip slow tests
 pdm run pytest -m integration                           # Run only integration tests
 
-
-### Test Environment Configuration
-```
-# Milvus Test Instance
-MILVUS_URI=http://10.104.13.2:19530
-
-# MinIO Test Instance  
-MINIO_HOST=10.104.30.110
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-MINIO_BUCKET=long-run-verify
-```
-
 # Combined quality checks (via Makefile)
-make lint          # Run ruff format and check + mypy
+make lint          # Run ruff format + check + mypy
 make test          # Run pytest
 make test-cov      # Run tests with coverage report
 make check         # Run lint + test together
 make clean         # Clean build artifacts and caches
 make build         # Build the package
 make publish       # Publish to PyPI
+make security      # Run security checks (safety, pip-audit, bandit)
 ```
+
+### Test Environment Configuration
+
+**Local Test Environment (Recommended):**
+Use the Docker Compose setup in `deploy/docker-compose.yml` to start local test services:
+
+```bash
+# Start local test environment
+cd deploy/
+docker-compose up -d
+
+# Environment variables for local testing
+export MILVUS_URI=http://127.0.0.1:19530
+export MINIO_HOST=127.0.0.1
+export MINIO_ACCESS_KEY=minioadmin
+export MINIO_SECRET_KEY=minioadmin
+export MINIO_BUCKET=a-bucket
+
+# Or use the .env file in project root
+cp .env.example .env  # Edit with your values
+```
+
+**Note:** The `deploy/docker-compose.yml` provides a complete local testing stack including Milvus and MinIO.
 
 ### Building & Publishing
 ```bash
@@ -104,12 +110,13 @@ milvus-fake-data to-milvus insert ./output --uri http://192.168.1.100:19530 --to
 milvus-fake-data to-milvus insert ./output --drop-if-exists               # Drop existing collection and recreate
 milvus-fake-data to-milvus insert ./output --collection-name my_collection --batch-size 5000  # Custom settings
 
-# Bulk import to Milvus (for pre-uploaded files in MinIO/S3)
-milvus-fake-data to-milvus import my_collection data.parquet              # Import single file
-milvus-fake-data to-milvus import my_collection file1.parquet file2.parquet  # Import multiple files
-milvus-fake-data to-milvus import my_collection ./output/                 # Import all files from directory
-milvus-fake-data to-milvus import my_collection ./output/ --wait          # Import and wait for completion
-milvus-fake-data to-milvus import my_collection data.parquet --uri http://192.168.1.100:19530  # Custom Milvus URI
+# Bulk import to Milvus (upload + import in one step)
+# Note: Combines upload and import for convenience, includes auto-collection creation
+milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000  # Upload and import
+milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --collection-name my_collection  # Override collection name
+milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --wait  # Wait for completion
+milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --access-key-id key --secret-access-key secret  # With credentials
+milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --drop-if-exists  # Drop and recreate
 ```
 
 ## Architecture Overview
@@ -135,18 +142,18 @@ milvus-fake-data/
 ```
 
 ### Core Modules
-- **cli.py**: High-performance command-line interface optimized for large-scale data generation
-- **optimized_writer.py**: Vectorized data generation engine using NumPy operations for maximum performance
-- **generator.py**: Legacy data generation logic (for compatibility)
-- **models.py**: Pydantic models for schema validation with comprehensive error messages
-- **schema_manager.py**: Manages custom and built-in schemas, stores user schemas in ~/.milvus-fake-data/schemas
-- **builtin_schemas.py**: Pre-built schemas for common use cases (e-commerce, documents, images, etc.)
-- **rich_display.py**: Rich terminal formatting for CLI output
+- **cli.py**: Command-line interface with Click framework, supports generation, schema management, upload, and Milvus integration
+- **optimized_writer.py**: High-performance vectorized data generation using NumPy operations for large datasets
+- **generator.py**: Core data generation logic that wraps optimized_writer for compatibility
+- **models.py**: Pydantic models for schema validation with comprehensive error messages and field type definitions
+- **schema_manager.py**: Manages built-in and custom schemas, stores user schemas in ~/.milvus-fake-data/schemas
+- **builtin_schemas.py**: Built-in schema definitions with metadata (12 schemas: simple, ecommerce, documents, images, users, videos, news, audio_transcripts, ai_conversations, face_recognition, ecommerce_partitioned, cardinality_demo)
+- **rich_display.py**: Rich terminal formatting and user interface components
 - **logging_config.py**: Structured logging with loguru
-- **exceptions.py**: Custom exception classes for better error handling
-- **uploader.py**: S3/MinIO upload functionality with support for AWS S3 and S3-compatible storage
-- **milvus_inserter.py**: Direct insert to Milvus with collection creation and indexing
-- **milvus_importer.py**: Bulk import functionality for pre-uploaded files in MinIO/S3
+- **exceptions.py**: Custom exception classes (MilvusFakeDataError, SchemaError, UnsupportedFieldTypeError, GenerationError)
+- **uploader.py**: S3/MinIO upload functionality with boto3, supports AWS S3 and S3-compatible storage
+- **milvus_inserter.py**: Direct insert to Milvus using PyMilvus client with automatic collection creation
+- **milvus_importer.py**: Bulk import using PyMilvus bulk_import API for pre-uploaded files
 
 ### High-Performance Data Flow
 1. Schema validation using Pydantic models (models.py)
@@ -167,10 +174,11 @@ The tool supports two types of schemas:
 - **Custom schemas**: User-managed schemas stored in ~/.milvus-fake-data/schemas/ with metadata
 
 ### Supported Milvus Field Types
-- Numeric: Int8, Int16, Int32, Int64, Float, Double, Bool
-- Text: VarChar, String (require max_length)
-- Complex: JSON, Array (require element_type and max_capacity)
-- Vectors: FloatVector, BinaryVector, Float16Vector, BFloat16Vector, Int8Vector, SparseFloatVector (require dim)
+- **Numeric**: Int8, Int16, Int32, Int64, Float, Double, Bool
+- **Text**: VarChar, String (require max_length parameter)
+- **Complex**: JSON, Array (Array requires element_type and max_capacity)
+- **Vectors**: FloatVector, BinaryVector, Float16Vector, BFloat16Vector, SparseFloatVector (all require dim parameter)
+- **Note**: Int8Vector is not supported in current Milvus versions
 
 ## High-Performance Implementation Details
 
@@ -280,15 +288,20 @@ milvus-fake-data generate --schema schema.json --rows 10000000 --batch-size 5000
 - **Storage**: SSD recommended for large file I/O operations
 
 ### Python API Usage
-The package can also be used programmatically:
+The package can be used programmatically:
 ```python
-from milvus_fake_data import SchemaManager
+from milvus_fake_data.generator import generate_mock_data
+from milvus_fake_data.schema_manager import get_schema_manager
+from milvus_fake_data.builtin_schemas import load_builtin_schema
 
-# Use built-in schemas
-schema_manager = SchemaManager()
-schema = schema_manager.get_schema("simple")
+# Use schema manager for built-in schemas
+manager = get_schema_manager()
+schema = manager.get_schema("simple")
 
-# Add custom schema programmatically
+# Generate data from schema
+df = generate_mock_data("schema.json", rows=1000, seed=42)
+
+# Add custom schema programmatically  
 custom_schema = {
     "collection_name": "my_collection",
     "fields": [
@@ -296,7 +309,7 @@ custom_schema = {
         {"name": "vector", "type": "FloatVector", "dim": 128}
     ]
 }
-schema_manager.add_schema("my_custom", custom_schema)
+manager.add_schema("my_custom", custom_schema, "Description", ["tag"])
 ```
 
 ### S3/MinIO Upload Feature
@@ -353,34 +366,32 @@ milvus-fake-data to-milvus insert ./products/ \
 The tool includes support for bulk importing pre-uploaded files from MinIO/S3 to Milvus using the PyMilvus bulk_import API:
 
 **Features:**
-- Import single or multiple files to a Milvus collection
-- Import all files from a directory
+- **Combined upload and import** in one step for convenience
+- Import data directories (output from 'generate' command) to Milvus collection
+- Automatic upload to S3/MinIO before import
 - Wait for import completion with timeout support
 - Check import job progress
 - List all import jobs with filtering
+- **Automatic collection creation from meta.json (same as insert command)**
 
 **Usage Examples:**
 ```bash
-# Import single file
-milvus-fake-data to-milvus import my_collection s3://bucket/data.parquet
+# Upload and import in one step (collection name from meta.json)
+milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000
 
-# Import multiple files
-milvus-fake-data to-milvus import my_collection s3://bucket/file1.parquet s3://bucket/file2.parquet
-
-# Import from local directory (for files already uploaded to MinIO/S3)
-milvus-fake-data to-milvus import my_collection ./output/
-
-# Import and wait for completion
-milvus-fake-data to-milvus import my_collection ./output/ --wait --timeout 300
+# Upload and import with custom collection name and wait for completion
+milvus-fake-data to-milvus import --collection-name my_collection --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --wait --timeout 300
 ```
 
 **Import Methods Comparison:**
 
 1. **Bulk Import (`to-milvus import`)**: 
-   - Requires files to be uploaded to MinIO/S3 first
+   - **Automatically uploads files to MinIO/S3 then imports**
    - Uses Milvus bulk import API for high-performance imports
    - Suitable for very large datasets (millions of rows)
    - Asynchronous operation with job tracking
+   - **Auto-collection creation from meta.json (same as insert)**
+   - **Single command replaces the need for separate upload + import**
 
 2. **Direct Insert (`to-milvus insert`)**:
    - Reads data directly from local files

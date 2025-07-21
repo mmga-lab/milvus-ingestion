@@ -102,3 +102,6 @@ dmypy.json
 *.npy
 !/schema.json
 !src/milvus_fake_data/schemas/**/*.json
+
+# milvus volume
+deploy/volumes

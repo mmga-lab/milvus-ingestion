@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 from typing import Any
 
+from pymilvus import DataType, MilvusClient
 from pymilvus.bulk_writer import bulk_import, get_import_progress, list_import_jobs
 from rich.progress import (
     BarColumn,
@@ -39,44 +41,275 @@ class MilvusBulkImporter:
         self.db_name = db_name
         self.logger = get_logger(__name__)
 
+        # Initialize Milvus client for collection management
+        try:
+            self.client = MilvusClient(
+                uri=uri,
+                token=token,
+                db_name=db_name,
+            )
+            self.logger.info(f"Connected to Milvus at {uri}")
+        except Exception as e:
+            self.logger.error(f"Failed to connect to Milvus: {e}")
+            raise
+
+    def _get_milvus_datatype(self, field_type: str) -> DataType:
+        """Map field type string to Milvus DataType."""
+        type_mapping = {
+            "Bool": DataType.BOOL,
+            "Int8": DataType.INT8,
+            "Int16": DataType.INT16,
+            "Int32": DataType.INT32,
+            "Int64": DataType.INT64,
+            "Float": DataType.FLOAT,
+            "Double": DataType.DOUBLE,
+            "VarChar": DataType.VARCHAR,
+            "String": DataType.VARCHAR,
+            "JSON": DataType.JSON,
+            "Array": DataType.ARRAY,
+            "FloatVector": DataType.FLOAT_VECTOR,
+            "BinaryVector": DataType.BINARY_VECTOR,
+            "Float16Vector": DataType.FLOAT16_VECTOR,
+            "BFloat16Vector": DataType.BFLOAT16_VECTOR,
+            "SparseFloatVector": DataType.SPARSE_FLOAT_VECTOR,
+        }
+        if field_type not in type_mapping:
+            raise ValueError(f"Unsupported field type: {field_type}")
+        return type_mapping[field_type]
+
+    def _create_schema(self, metadata: dict[str, Any]) -> Any:
+        """Create Milvus collection schema from metadata."""
+        schema = self.client.create_schema(enable_dynamic_field=True)
+
+        for field_info in metadata["schema"]["fields"]:
+            field_name = field_info["name"]
+            field_type = field_info["type"]
+            milvus_type = self._get_milvus_datatype(field_type)
+
+            # Add field to schema
+            if field_type in ["VarChar", "String"]:
+                schema.add_field(
+                    field_name=field_name,
+                    datatype=milvus_type,
+                    max_length=field_info.get("max_length", 65535),
+                    is_primary=field_info.get("is_primary", False),
+                    auto_id=field_info.get("auto_id", False),
+                )
+            elif "Vector" in field_type:
+                # SparseFloatVector doesn't need dim parameter
+                if field_type == "SparseFloatVector":
+                    schema.add_field(
+                        field_name=field_name,
+                        datatype=milvus_type,
+                        is_primary=field_info.get("is_primary", False),
+                        auto_id=field_info.get("auto_id", False),
+                    )
+                else:
+                    schema.add_field(
+                        field_name=field_name,
+                        datatype=milvus_type,
+                        dim=field_info.get("dim"),
+                        is_primary=field_info.get("is_primary", False),
+                        auto_id=field_info.get("auto_id", False),
+                    )
+            elif field_type == "Array":
+                kwargs = {
+                    "field_name": field_name,
+                    "datatype": milvus_type,
+                    "max_capacity": field_info.get("max_capacity"),
+                    "element_type": self._get_milvus_datatype(
+                        field_info.get("element_type")
+                    ),
+                    "is_primary": field_info.get("is_primary", False),
+                    "auto_id": field_info.get("auto_id", False),
+                }
+                # Add max_length for string arrays
+                if field_info.get("element_type") in ["VarChar", "String"]:
+                    kwargs["max_length"] = field_info.get("max_length", 65535)
+                schema.add_field(**kwargs)
+            else:
+                schema.add_field(
+                    field_name=field_name,
+                    datatype=milvus_type,
+                    is_primary=field_info.get("is_primary", False),
+                    auto_id=field_info.get("auto_id", False),
+                )
+
+        return schema
+
+    def _create_index_params(self, metadata: dict[str, Any]) -> Any:
+        """Create index parameters for vector fields."""
+        index_params = self.client.prepare_index_params()
+
+        for field_info in metadata["schema"]["fields"]:
+            field_name = field_info["name"]
+            field_type = field_info["type"]
+
+            if "Vector" in field_type and field_type != "SparseFloatVector":
+                # Use appropriate index based on vector dimension
+                dim = field_info.get("dim", 0)
+                if dim <= 2048:
+                    index_params.add_index(
+                        field_name=field_name,
+                        index_type="FLAT",
+                        metric_type="L2",
+                    )
+                else:
+                    index_params.add_index(
+                        field_name=field_name,
+                        index_type="IVF_FLAT",
+                        metric_type="L2",
+                        params={"nlist": 128},
+                    )
+
+        return index_params
+
+    def ensure_collection_exists(
+        self,
+        collection_name: str,
+        schema_metadata: dict[str, Any] | None = None,
+        drop_if_exists: bool = False,
+    ) -> bool:
+        """Ensure collection exists, create if needed.
+
+        Args:
+            collection_name: Target collection name
+            schema_metadata: Schema metadata for creating collection (from meta.json)
+            drop_if_exists: Drop collection if it already exists
+
+        Returns:
+            True if collection was created, False if it already existed
+        """
+        # Check if collection exists
+        if self.client.has_collection(collection_name):
+            if drop_if_exists:
+                self.client.drop_collection(collection_name)
+                self.logger.info(f"Dropped existing collection: {collection_name}")
+            else:
+                self.logger.info(f"Collection '{collection_name}' already exists")
+                return False
+
+        # Create collection if we have metadata
+        if schema_metadata:
+            schema = self._create_schema(schema_metadata)
+            index_params = self._create_index_params(schema_metadata)
+
+            self.client.create_collection(
+                collection_name=collection_name,
+                schema=schema,
+                index_params=index_params,
+            )
+            self.logger.info(f"Created collection: {collection_name}")
+            return True
+        else:
+            raise ValueError(
+                f"Collection '{collection_name}' does not exist and no schema metadata provided"
+            )
+
+    def _try_load_metadata(self, files: list[str]) -> dict[str, Any] | None:
+        """Try to load metadata from file paths.
+
+        Args:
+            files: List of file paths
+
+        Returns:
+            Metadata dict if found, None otherwise
+        """
+        # Try to find meta.json in the same directory as data files
+        for file_path in files:
+            try:
+                if file_path.startswith("s3://"):
+                    # For S3 paths, we can't easily access meta.json
+                    # This would require S3 client integration
+                    continue
+
+                path = Path(file_path)
+                if path.is_dir():
+                    # Check for meta.json in directory
+                    meta_path = path / "meta.json"
+                    if meta_path.exists():
+                        with open(meta_path) as f:
+                            metadata: dict[str, Any] = json.load(f)
+                        self.logger.info(f"Found metadata in {meta_path}")
+                        return metadata
+                else:
+                    # Check for meta.json in same directory as file
+                    meta_path = path.parent / "meta.json"
+                    if meta_path.exists():
+                        with open(meta_path) as f:
+                            file_metadata: dict[str, Any] = json.load(f)
+                        self.logger.info(f"Found metadata in {meta_path}")
+                        return file_metadata
+            except Exception as e:
+                self.logger.debug(f"Failed to load metadata from {file_path}: {e}")
+
+        return None
+
     def bulk_import_files(
         self,
         collection_name: str,
         files: list[str],
+        import_files: list[str] | None = None,
         show_progress: bool = True,
+        create_collection: bool = True,
+        drop_if_exists: bool = False,
     ) -> str:
         """Start bulk import job.
 
         Args:
             collection_name: Target collection name
-            files: List of file paths to import
+            files: List of directory paths for metadata loading
+            import_files: List of relative file paths to import (relative to bucket)
             show_progress: Show progress bar
+            create_collection: Try to create collection if it doesn't exist
+            drop_if_exists: Drop collection if it already exists
 
         Returns:
             Job ID for the import task
         """
         try:
+            # Try to ensure collection exists
+            if create_collection:
+                # Try to load metadata from files
+                metadata = self._try_load_metadata(files)
+
+                if metadata:
+                    # Use metadata to create collection if needed
+                    self.ensure_collection_exists(
+                        collection_name=collection_name,
+                        schema_metadata=metadata,
+                        drop_if_exists=drop_if_exists,
+                    )
+                else:
+                    # Just check if collection exists
+                    if not self.client.has_collection(collection_name):
+                        self.logger.warning(
+                            f"Collection '{collection_name}' does not exist and no metadata found. "
+                            "Please create the collection first or ensure meta.json is available."
+                        )
+                        raise ValueError(
+                            f"Collection '{collection_name}' does not exist. "
+                            "Create it first using 'to-milvus insert' or provide meta.json"
+                        )
+            # Use import_files if provided, otherwise use files
+            actual_import_files = import_files if import_files is not None else files
+
             # Log import preparation details
             self.logger.info(f"Preparing bulk import for collection: {collection_name}")
             self.logger.info(f"Target Milvus URI: {self.uri}")
             self.logger.info(f"Database: {self.db_name}")
-            self.logger.info(f"Number of files to import: {len(files)}")
+            self.logger.info(f"Number of files to import: {len(actual_import_files)}")
 
             # Log file details
-            for i, file_path in enumerate(files, 1):
+            for i, file_path in enumerate(actual_import_files, 1):
                 if file_path.startswith("s3://"):
                     self.logger.info(f"File {i}: {file_path} (S3/MinIO)")
                 else:
-                    # Check if local file exists and get size
-                    path = Path(file_path)
-                    if path.exists():
-                        size_mb = path.stat().st_size / (1024 * 1024)
-                        self.logger.info(f"File {i}: {file_path} ({size_mb:.2f} MB)")
-                    else:
-                        self.logger.info(f"File {i}: {file_path} (path not found locally)")
+                    # For relative paths, just show the filename
+                    self.logger.info(f"File {i}: {file_path} (relative to bucket)")
 
             # Prepare files as list of lists (each inner list is a batch)
-            file_batches = [[f] for f in files]
+            file_batches = [[f] for f in actual_import_files]
             self.logger.info(f"Organized files into {len(file_batches)} import batches")
 
             # Start bulk import using bulk_writer
@@ -89,12 +322,14 @@ class MilvusBulkImporter:
 
             # Extract job ID from response
             response_data = resp.json()
-            job_id = response_data["data"]["jobId"]
+            job_id: str = response_data["data"]["jobId"]
 
             self.logger.info("✓ Bulk import request accepted successfully")
             self.logger.info(f"Job ID: {job_id}")
             self.logger.info(f"Collection: {collection_name}")
-            self.logger.info("Status: Import job queued and will be processed asynchronously")
+            self.logger.info(
+                "Status: Import job queued and will be processed asynchronously"
+            )
 
             return job_id
 
@@ -149,11 +384,13 @@ class MilvusBulkImporter:
 
                     # Log detailed progress information
                     elapsed = time.time() - start_time
-                    if elapsed % 10 < 2:  # Log every 10 seconds
+                    if int(elapsed) % 10 < 2:  # Log every 10 seconds
                         self.logger.info(f"Import progress update for job {job_id}:")
                         self.logger.info(f"  State: {state}")
                         self.logger.info(f"  Progress: {progress_percent}%")
-                        self.logger.info(f"  Imported rows: {imported_rows:,} / {total_rows:,}")
+                        self.logger.info(
+                            f"  Imported rows: {imported_rows:,} / {total_rows:,}"
+                        )
                         self.logger.info(f"  File size processed: {file_size:,} bytes")
                         self.logger.info(f"  Elapsed time: {elapsed:.1f}s")
 
@@ -176,7 +413,9 @@ class MilvusBulkImporter:
                         self.logger.error(f"Failure reason: {reason}")
                         self.logger.error(f"State: {state}")
                         self.logger.error(f"Progress when failed: {progress_percent}%")
-                        self.logger.error(f"Rows imported before failure: {imported_rows:,}")
+                        self.logger.error(
+                            f"Rows imported before failure: {imported_rows:,}"
+                        )
                         return False
 
                     # Update progress
@@ -187,7 +426,7 @@ class MilvusBulkImporter:
         else:
             # Wait without progress bar
             self.logger.info(f"Monitoring import job {job_id} (no progress bar)")
-            last_log_time = 0
+            last_log_time = 0.0
 
             while time.time() - start_time < timeout:
                 resp = get_import_progress(
@@ -207,7 +446,9 @@ class MilvusBulkImporter:
                     self.logger.info(f"Import progress update for job {job_id}:")
                     self.logger.info(f"  State: {state}")
                     self.logger.info(f"  Progress: {progress_percent}%")
-                    self.logger.info(f"  Imported rows: {imported_rows:,} / {total_rows:,}")
+                    self.logger.info(
+                        f"  Imported rows: {imported_rows:,} / {total_rows:,}"
+                    )
                     self.logger.info(f"  File size processed: {file_size:,} bytes")
                     self.logger.info(f"  Elapsed time: {elapsed:.1f}s")
                     last_log_time = elapsed
@@ -229,7 +470,9 @@ class MilvusBulkImporter:
                     self.logger.error(f"Failure reason: {reason}")
                     self.logger.error(f"State: {state}")
                     self.logger.error(f"Progress when failed: {progress_percent}%")
-                    self.logger.error(f"Rows imported before failure: {imported_rows:,}")
+                    self.logger.error(
+                        f"Rows imported before failure: {imported_rows:,}"
+                    )
                     return False
 
                 time.sleep(2)
@@ -270,13 +513,13 @@ class MilvusBulkImporter:
                     url=self.uri,
                 )
 
-            jobs = resp.json()["data"]["records"]
+            jobs: list[dict[str, Any]] = resp.json()["data"]["records"]
 
             self.logger.info(f"📋 Found {len(jobs)} import jobs")
 
             # Log summary of jobs by state
             if jobs:
-                states = {}
+                states: dict[str, int] = {}
                 for job in jobs:
                     state = job.get("state", "unknown")
                     states[state] = states.get(state, 0) + 1
@@ -286,14 +529,18 @@ class MilvusBulkImporter:
                     self.logger.info(f"  {state}: {count} jobs")
 
                 # Log details of recent jobs
-                recent_jobs = sorted(jobs, key=lambda x: x.get("jobId", ""), reverse=True)[:5]
+                recent_jobs = sorted(
+                    jobs, key=lambda x: x.get("jobId", ""), reverse=True
+                )[:5]
                 self.logger.info(f"Recent {min(5, len(jobs))} jobs:")
                 for job in recent_jobs:
                     job_id = job.get("jobId", "unknown")
                     state = job.get("state", "unknown")
                     collection = job.get("collectionName", "unknown")
                     imported_rows = job.get("importedRows", 0)
-                    self.logger.info(f"  Job {job_id}: {state} | Collection: {collection} | Rows: {imported_rows:,}")
+                    self.logger.info(
+                        f"  Job {job_id}: {state} | Collection: {collection} | Rows: {imported_rows:,}"
+                    )
 
             return jobs
 
@@ -303,58 +550,3 @@ class MilvusBulkImporter:
             if collection_name:
                 self.logger.error(f"Collection filter: {collection_name}")
             raise
-
-
-def prepare_file_paths(files: list[str]) -> list[str]:
-    """Prepare file paths for bulk import.
-
-    Args:
-        files: List of file paths or directories
-
-    Returns:
-        List of prepared file paths
-    """
-    logger = get_logger(__name__)
-    logger.info("Preparing file paths for bulk import")
-    logger.info(f"Input paths: {len(files)} items")
-
-    prepared_files = []
-
-    for file_path in files:
-        path = Path(file_path)
-        logger.info(f"Processing path: {file_path}")
-
-        if file_path.startswith("s3://"):
-            # S3/MinIO path - use as is
-            prepared_files.append(file_path)
-            logger.info(f"  Added S3 path: {file_path}")
-        elif path.is_dir():
-            # Local directory - find files
-            logger.info(f"  Processing directory: {path}")
-            parquet_files = list(path.glob("*.parquet"))
-            if parquet_files:
-                prepared_files.extend([str(f) for f in parquet_files])
-                logger.info(f"  Found {len(parquet_files)} parquet files")
-                for pf in parquet_files:
-                    size_mb = pf.stat().st_size / (1024 * 1024)
-                    logger.info(f"    {pf.name} ({size_mb:.2f} MB)")
-            else:
-                # Add all files in directory
-                all_files = [f for f in path.iterdir() if f.is_file()]
-                prepared_files.extend([str(f) for f in all_files])
-                logger.info(f"  Found {len(all_files)} other files")
-                for af in all_files:
-                    size_mb = af.stat().st_size / (1024 * 1024)
-                    logger.info(f"    {af.name} ({size_mb:.2f} MB)")
-        elif path.exists():
-            # Single local file
-            prepared_files.append(str(path))
-            size_mb = path.stat().st_size / (1024 * 1024)
-            logger.info(f"  Added file: {path.name} ({size_mb:.2f} MB)")
-        else:
-            # Path doesn't exist locally, might be S3 or remote
-            prepared_files.append(file_path)
-            logger.info(f"  Added path (not found locally): {file_path}")
-
-    logger.info(f"✓ Prepared {len(prepared_files)} files for import")
-    return prepared_files

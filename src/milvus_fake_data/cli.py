@@ -697,21 +697,19 @@ def upload(
     no_progress: bool = False,
 ) -> None:
     """Upload generated data files to S3/MinIO.
-    
+
     \b
     Examples:
         # Upload to AWS S3
         milvus-fake-data upload ./output s3://my-bucket/data/
-        
+
         # Upload to MinIO
         milvus-fake-data upload ./output s3://my-bucket/data/ --endpoint-url http://localhost:9000
-        
+
         # With explicit credentials
         milvus-fake-data upload ./output s3://my-bucket/data/ \\
             --access-key-id mykey --secret-access-key mysecret
     """
-    logger = get_logger(__name__)
-
     try:
         # Parse S3 URL
         bucket, prefix = parse_s3_url(destination)
@@ -758,9 +756,7 @@ def upload(
         ctx = click.get_current_context()
         click.echo(ctx.get_help())
     except Exception as e:
-        log_error_with_context(
-            logger, e, {"source": str(source), "destination": destination}
-        )
+        log_error_with_context(e, {"source": str(source), "destination": destination})
         display_error(f"Upload failed: {e}")
 
 
@@ -842,8 +838,6 @@ def insert_to_milvus(
         # Insert with custom collection name
         milvus-fake-data to-milvus insert ./output --collection-name my_collection
     """
-    logger = get_logger(__name__)
-
     try:
         # Create inserter
         inserter = MilvusInserter(
@@ -895,8 +889,49 @@ def insert_to_milvus(
 
 
 @to_milvus.command("import")
-@click.argument("collection", type=str)
-@click.argument("files", type=str, nargs=-1, required=True)
+@click.option(
+    "--collection-name",
+    type=str,
+    help="Target collection name for import (overrides collection name from meta.json)",
+)
+@click.option(
+    "--local-path",
+    required=True,
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
+    help="Local path to data directory (output from 'generate' command)",
+)
+@click.option(
+    "--s3-path",
+    required=True,
+    type=str,
+    help="S3 path to upload to (relative to bucket, e.g., 'data/' or 'prefix/data/')",
+)
+@click.option(
+    "--bucket",
+    required=True,
+    type=str,
+    help="S3/MinIO bucket name",
+)
+@click.option(
+    "--endpoint-url",
+    type=str,
+    help="S3/MinIO endpoint URL (e.g., http://localhost:9000 for MinIO)",
+)
+@click.option(
+    "--access-key-id",
+    type=str,
+    help="S3/MinIO access key ID",
+)
+@click.option(
+    "--secret-access-key",
+    type=str,
+    help="S3/MinIO secret access key",
+)
+@click.option(
+    "--no-verify-ssl",
+    is_flag=True,
+    help="Disable SSL certificate verification",
+)
 @click.option(
     "--uri",
     default="http://127.0.0.1:19530",
@@ -917,58 +952,127 @@ def insert_to_milvus(
     type=int,
     help="Timeout in seconds when waiting (no timeout by default)",
 )
+@click.option(
+    "--drop-if-exists",
+    is_flag=True,
+    help="Drop collection if it already exists before creating",
+)
 def import_to_milvus(
-    collection: str,
-    files: tuple[str, ...],
+    collection_name: str | None,
+    local_path: Path,
+    s3_path: str,
+    bucket: str,
+    endpoint_url: str | None,
+    access_key_id: str | None,
+    secret_access_key: str | None,
+    no_verify_ssl: bool,
     uri: str = "http://127.0.0.1:19530",
     token: str = "",
     wait: bool = False,
     timeout: int | None = None,
+    drop_if_exists: bool = False,
 ) -> None:
-    """Start bulk import of files to Milvus collection from MinIO/S3.
+    """Upload data to S3/MinIO and bulk import to Milvus in one step.
+
+    Automatically creates the collection if it doesn't exist (using meta.json from data directory).
+    This combines the upload and import steps for convenience.
 
     \b
     Examples:
-        # Import single file
-        milvus-fake-data to-milvus import my_collection data.parquet
+        # Upload and import using collection name from meta.json
+        milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000
 
-        # Import multiple files
-        milvus-fake-data to-milvus import my_collection file1.parquet file2.parquet
+        # Upload and import with custom collection name
+        milvus-fake-data to-milvus import --collection-name my_collection --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000
 
-        # Import all files from directory
-        milvus-fake-data to-milvus import my_collection ./output/
+        # Upload and import with credentials
+        milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --access-key-id key --secret-access-key secret
 
-        # Import and wait for completion
-        milvus-fake-data to-milvus import my_collection ./output/ --wait
-
-        # Import with custom Milvus URI
-        milvus-fake-data to-milvus import my_collection data.parquet --uri http://192.168.1.100:19530
+        # Upload and import then wait for completion
+        milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --wait
     """
-    from .milvus_importer import MilvusBulkImporter, prepare_file_paths
+    from .milvus_importer import MilvusBulkImporter
+    from .uploader import S3Uploader
 
     try:
-        # Create bulk importer
+        # Load metadata from local path
+        meta_file = local_path / "meta.json"
+        if not meta_file.exists():
+            raise FileNotFoundError(f"meta.json not found in {local_path}")
+
+        import json
+
+        with open(meta_file) as f:
+            metadata = json.load(f)
+
+        # Get collection name
+        final_collection_name = collection_name or metadata.get("schema", {}).get(
+            "collection_name"
+        )
+        if not final_collection_name:
+            raise ValueError(
+                "Collection name not found in meta.json and not provided via --collection-name"
+            )
+
+        # Step 1: Upload data to S3/MinIO
+        print(f"Step 1: Uploading data to S3/MinIO...")
+        uploader = S3Uploader(
+            endpoint_url=endpoint_url,
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            verify_ssl=not no_verify_ssl,
+        )
+
+        # Ensure s3_path ends with /
+        if not s3_path.endswith("/"):
+            s3_path = s3_path + "/"
+
+        destination = f"s3://{bucket}/{s3_path}"
+        uploader.upload_directory(local_path, bucket, s3_path, show_progress=True)
+        print(f"✓ Data uploaded to {destination}")
+
+        # Step 2: Import to Milvus
+        print(f"Step 2: Importing data to Milvus...")
         importer = MilvusBulkImporter(uri=uri, token=token)
 
-        # Prepare file paths
-        file_paths = prepare_file_paths(list(files))
+        # Get list of data files to import
+        data_files = []
+        for parquet_file in local_path.glob("*.parquet"):
+            data_files.append(s3_path + parquet_file.name)
+
+        if not data_files:
+            raise ValueError(f"No parquet files found in {local_path}")
 
         # Start import
         job_id = importer.bulk_import_files(
-            collection_name=collection,
-            files=file_paths,
+            collection_name=final_collection_name,
+            files=[str(local_path)],  # For metadata loading
+            import_files=data_files,  # S3 file paths
             show_progress=True,
+            create_collection=True,  # Always try to create with metadata
+            drop_if_exists=drop_if_exists,
         )
+
+        print(f"✓ Import job started: {job_id}")
+        print(f"✓ Collection: {final_collection_name}")
 
         # Wait for completion if requested
         if wait:
             success = importer.wait_for_completion(job_id, timeout=timeout or 300)
-            if not success:
+            if success:
+                print(f"✓ Import completed successfully!")
+            else:
                 raise SystemExit(1)
+        else:
+            print(
+                f"Import job is running asynchronously. Use job ID {job_id} to check status."
+            )
 
     except Exception as e:
+        from .rich_display import display_error
+
         display_error(f"Import failed: {e}")
-        raise SystemExit(1)
+        raise SystemExit(1) from e
 
 
 def _save_with_high_performance_generator(
