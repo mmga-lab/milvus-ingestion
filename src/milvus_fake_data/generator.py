@@ -378,7 +378,7 @@ def _gen_value_by_field(field: dict[str, Any]) -> Any:
         non_zero_count = random.randint(10, max_dim // 10)  # 10-100 non-zero values
         indices = random.sample(range(max_dim), non_zero_count)
         values = [random.random() for _ in range(non_zero_count)]
-        sparse_vector = {str(index): value for index, value in zip(indices, values)}
+        sparse_vector = {str(index): value for index, value in zip(indices, values, strict=False)}
         return sparse_vector
     raise ValueError(f"Unsupported field type: {f_type}")
 

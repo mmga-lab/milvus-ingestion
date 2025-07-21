@@ -63,6 +63,9 @@ milvus-fake-data generate --builtin ecommerce --rows 2500000 --out products/
 | `users` | User profiles with behavioral embeddings | User analytics, personalization |
 | `videos` | Video library with multimodal embeddings | Video platforms, content discovery |
 | `news` | News articles with sentiment analysis | News aggregation, content analysis |
+| `audio_transcripts` | Audio transcription with FP16 embeddings | Speech-to-text search, podcasts |
+| `ai_conversations` | AI chat history with BF16 embeddings | Chatbot analytics, conversation search |
+| `face_recognition` | Facial recognition with binary vectors | Security systems, identity verification |
 
 ### 2. Create Custom Schemas
 
@@ -322,6 +325,134 @@ milvus-fake-data schema add my_ecommerce ecommerce_base.json
 # Clean up generated output files
 milvus-fake-data clean --yes
 ```
+
+## 🔗 Milvus Integration
+
+### Direct Insert to Milvus
+
+Insert generated data directly into Milvus with automatic collection creation:
+
+```bash
+# Generate data first
+milvus-fake-data generate --builtin ecommerce --rows 100000 --out products/
+
+# Insert to local Milvus (default: localhost:19530)
+milvus-fake-data to-milvus insert ./products/
+
+# Insert to remote Milvus with authentication
+milvus-fake-data to-milvus insert ./products/ \
+    --uri http://192.168.1.100:19530 \
+    --token your-api-token \
+    --db-name custom_db
+
+# Insert with custom settings
+milvus-fake-data to-milvus insert ./products/ \
+    --collection-name product_catalog \
+    --batch-size 5000 \
+    --drop-if-exists
+```
+
+**Direct Insert Features:**
+- ✅ Automatic collection creation from metadata
+- ✅ Smart index creation based on vector dimensions
+- ✅ Progress tracking with batch processing
+- ✅ Support for authentication and custom databases
+- ✅ Connection testing before import
+
+### Bulk Import from S3/MinIO
+
+For very large datasets, use bulk import with pre-uploaded files:
+
+```bash
+# First, upload to S3/MinIO
+milvus-fake-data upload ./products/ s3://bucket/data/ \
+    --endpoint-url http://minio:9000 \
+    --access-key-id minioadmin \
+    --secret-access-key minioadmin
+
+# Then bulk import to Milvus
+milvus-fake-data to-milvus import product_catalog s3://bucket/data/file1.parquet
+
+# Import multiple files
+milvus-fake-data to-milvus import product_catalog \
+    s3://bucket/data/file1.parquet \
+    s3://bucket/data/file2.parquet
+
+# Import all files from directory
+milvus-fake-data to-milvus import product_catalog ./products/
+
+# Import and wait for completion
+milvus-fake-data to-milvus import product_catalog ./products/ \
+    --wait \
+    --timeout 300
+```
+
+**Bulk Import Features:**
+- ⚡ High-performance import for millions of rows
+- 📁 Support for single/multiple files or directories
+- ⏳ Asynchronous operation with job tracking
+- 🔄 Wait for completion with timeout support
+- 📊 Import job status monitoring
+
+### S3/MinIO Upload
+
+Upload generated data to S3-compatible storage:
+
+```bash
+# Upload to AWS S3 (using default credentials)
+milvus-fake-data upload ./output s3://my-bucket/data/
+
+# Upload to MinIO with custom endpoint
+milvus-fake-data upload ./output s3://my-bucket/data/ \
+    --endpoint-url http://localhost:9000 \
+    --access-key-id minioadmin \
+    --secret-access-key minioadmin
+
+# Upload with environment variables
+export AWS_ACCESS_KEY_ID=your-key
+export AWS_SECRET_ACCESS_KEY=your-secret
+milvus-fake-data upload ./output s3://my-bucket/data/
+
+# Disable SSL verification for local MinIO
+milvus-fake-data upload ./output s3://my-bucket/data/ \
+    --endpoint-url http://localhost:9000 \
+    --no-verify-ssl
+```
+
+### Complete Workflow Example
+
+```bash
+# 1. Generate large dataset
+milvus-fake-data generate --builtin ecommerce --rows 5000000 --out products/
+
+# 2. Option A: Direct insert (for smaller datasets)
+milvus-fake-data to-milvus insert ./products/ \
+    --uri http://milvus:19530 \
+    --collection-name ecommerce_products
+
+# 2. Option B: Bulk import (for very large datasets)
+# First upload to MinIO
+milvus-fake-data upload ./products/ s3://milvus-data/products/ \
+    --endpoint-url http://minio:9000
+
+# Then bulk import
+milvus-fake-data to-milvus import ecommerce_products \
+    s3://milvus-data/products/ \
+    --wait
+```
+
+### Import Method Comparison
+
+| Method | Best For | Speed | Max Size | Features |
+|--------|----------|-------|----------|----------|
+| **Direct Insert** | <1M rows | Moderate | Limited by memory | Automatic collection creation, progress bar |
+| **Bulk Import** | >1M rows | Very Fast | 16GB per file | Async operation, job tracking |
+
+**Important Notes:**
+- Files must be uploaded to S3/MinIO before bulk import
+- Maximum 1024 files per import request
+- Each file should not exceed 16GB
+- Collection must exist for bulk import (create with direct insert first if needed)
 
 ## 🛠️ Development
 

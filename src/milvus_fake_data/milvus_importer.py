@@ -56,10 +56,31 @@ class MilvusBulkImporter:
             Job ID for the import task
         """
         try:
+            # Log import preparation details
+            self.logger.info(f"Preparing bulk import for collection: {collection_name}")
+            self.logger.info(f"Target Milvus URI: {self.uri}")
+            self.logger.info(f"Database: {self.db_name}")
+            self.logger.info(f"Number of files to import: {len(files)}")
+
+            # Log file details
+            for i, file_path in enumerate(files, 1):
+                if file_path.startswith("s3://"):
+                    self.logger.info(f"File {i}: {file_path} (S3/MinIO)")
+                else:
+                    # Check if local file exists and get size
+                    path = Path(file_path)
+                    if path.exists():
+                        size_mb = path.stat().st_size / (1024 * 1024)
+                        self.logger.info(f"File {i}: {file_path} ({size_mb:.2f} MB)")
+                    else:
+                        self.logger.info(f"File {i}: {file_path} (path not found locally)")
+
             # Prepare files as list of lists (each inner list is a batch)
             file_batches = [[f] for f in files]
+            self.logger.info(f"Organized files into {len(file_batches)} import batches")
 
             # Start bulk import using bulk_writer
+            self.logger.info("Initiating bulk import request to Milvus...")
             resp = bulk_import(
                 url=self.uri,
                 collection_name=collection_name,
@@ -67,15 +88,20 @@ class MilvusBulkImporter:
             )
 
             # Extract job ID from response
-            job_id = resp.json()["data"]["jobId"]
+            response_data = resp.json()
+            job_id = response_data["data"]["jobId"]
 
-            if show_progress:
-                self.logger.info(f"Bulk import started with job ID: {job_id}")
+            self.logger.info("✓ Bulk import request accepted successfully")
+            self.logger.info(f"Job ID: {job_id}")
+            self.logger.info(f"Collection: {collection_name}")
+            self.logger.info("Status: Import job queued and will be processed asynchronously")
 
             return job_id
 
         except Exception as e:
             self.logger.error(f"Failed to start bulk import: {e}")
+            self.logger.error(f"Collection: {collection_name}")
+            self.logger.error(f"Files: {files}")
             raise
 
     def wait_for_completion(
@@ -116,27 +142,53 @@ class MilvusBulkImporter:
                     )
                     job_info = resp.json()["data"]
                     state = job_info.get("state", "unknown")
+                    progress_percent = job_info.get("progress", 0)
+                    imported_rows = job_info.get("importedRows", 0)
+                    total_rows = job_info.get("totalRows", 0)
+                    file_size = job_info.get("fileSize", 0)
 
-                    if state == "ImportCompleted":
+                    # Log detailed progress information
+                    elapsed = time.time() - start_time
+                    if elapsed % 10 < 2:  # Log every 10 seconds
+                        self.logger.info(f"Import progress update for job {job_id}:")
+                        self.logger.info(f"  State: {state}")
+                        self.logger.info(f"  Progress: {progress_percent}%")
+                        self.logger.info(f"  Imported rows: {imported_rows:,} / {total_rows:,}")
+                        self.logger.info(f"  File size processed: {file_size:,} bytes")
+                        self.logger.info(f"  Elapsed time: {elapsed:.1f}s")
+
+                    if state == "ImportCompleted" or state == "Completed":
                         progress.update(task, completed=timeout)
-                        self.logger.info(
-                            f"Bulk import completed successfully: {job_id}"
-                        )
+                        self.logger.info("🎉 Bulk import completed successfully!")
+                        self.logger.info(f"Job ID: {job_id}")
+                        self.logger.info(f"Total rows imported: {imported_rows:,}")
+                        self.logger.info(f"Total file size: {file_size:,} bytes")
+                        self.logger.info(f"Total time: {elapsed:.2f}s")
+                        if imported_rows > 0 and elapsed > 0:
+                            rate = imported_rows / elapsed
+                            self.logger.info(f"Import rate: {rate:.0f} rows/second")
                         return True
-                    elif state == "ImportFailed":
+                    elif state == "ImportFailed" or state == "Failed":
                         progress.update(task, completed=timeout)
                         reason = job_info.get("reason", "Unknown error")
-                        self.logger.error(f"Bulk import failed: {reason}")
+                        self.logger.error("❌ Bulk import failed!")
+                        self.logger.error(f"Job ID: {job_id}")
+                        self.logger.error(f"Failure reason: {reason}")
+                        self.logger.error(f"State: {state}")
+                        self.logger.error(f"Progress when failed: {progress_percent}%")
+                        self.logger.error(f"Rows imported before failure: {imported_rows:,}")
                         return False
 
                     # Update progress
-                    elapsed = time.time() - start_time
                     progress.update(task, completed=min(elapsed, timeout))
 
                     time.sleep(2)
 
         else:
             # Wait without progress bar
+            self.logger.info(f"Monitoring import job {job_id} (no progress bar)")
+            last_log_time = 0
+
             while time.time() - start_time < timeout:
                 resp = get_import_progress(
                     url=self.uri,
@@ -144,19 +196,50 @@ class MilvusBulkImporter:
                 )
                 job_info = resp.json()["data"]
                 state = job_info.get("state", "unknown")
+                progress_percent = job_info.get("progress", 0)
+                imported_rows = job_info.get("importedRows", 0)
+                total_rows = job_info.get("totalRows", 0)
+                file_size = job_info.get("fileSize", 0)
 
-                if state == "ImportCompleted":
-                    self.logger.info(f"Bulk import completed successfully: {job_id}")
+                # Log detailed progress information every 10 seconds
+                elapsed = time.time() - start_time
+                if elapsed - last_log_time >= 10:
+                    self.logger.info(f"Import progress update for job {job_id}:")
+                    self.logger.info(f"  State: {state}")
+                    self.logger.info(f"  Progress: {progress_percent}%")
+                    self.logger.info(f"  Imported rows: {imported_rows:,} / {total_rows:,}")
+                    self.logger.info(f"  File size processed: {file_size:,} bytes")
+                    self.logger.info(f"  Elapsed time: {elapsed:.1f}s")
+                    last_log_time = elapsed
+
+                if state == "ImportCompleted" or state == "Completed":
+                    self.logger.info("🎉 Bulk import completed successfully!")
+                    self.logger.info(f"Job ID: {job_id}")
+                    self.logger.info(f"Total rows imported: {imported_rows:,}")
+                    self.logger.info(f"Total file size: {file_size:,} bytes")
+                    self.logger.info(f"Total time: {elapsed:.2f}s")
+                    if imported_rows > 0 and elapsed > 0:
+                        rate = imported_rows / elapsed
+                        self.logger.info(f"Import rate: {rate:.0f} rows/second")
                     return True
-                elif state == "ImportFailed":
+                elif state == "ImportFailed" or state == "Failed":
                     reason = job_info.get("reason", "Unknown error")
-                    self.logger.error(f"Bulk import failed: {reason}")
+                    self.logger.error("❌ Bulk import failed!")
+                    self.logger.error(f"Job ID: {job_id}")
+                    self.logger.error(f"Failure reason: {reason}")
+                    self.logger.error(f"State: {state}")
+                    self.logger.error(f"Progress when failed: {progress_percent}%")
+                    self.logger.error(f"Rows imported before failure: {imported_rows:,}")
                     return False
 
                 time.sleep(2)
 
         # Timeout reached
-        self.logger.error(f"Bulk import timeout after {timeout} seconds")
+        elapsed = time.time() - start_time
+        self.logger.error(f"⏰ Bulk import timeout after {timeout} seconds")
+        self.logger.error(f"Job ID: {job_id}")
+        self.logger.error(f"Final state: {job_info.get('state', 'unknown')}")
+        self.logger.error(f"Progress at timeout: {job_info.get('progress', 0)}%")
         return False
 
     def list_import_jobs(
@@ -174,25 +257,51 @@ class MilvusBulkImporter:
             List of import job information
         """
         try:
+            self.logger.info(f"Listing import jobs from Milvus: {self.uri}")
             if collection_name:
+                self.logger.info(f"Filtering by collection: {collection_name}")
                 resp = list_import_jobs(
                     url=self.uri,
                     collection_name=collection_name,
                 )
             else:
+                self.logger.info("Listing all import jobs")
                 resp = list_import_jobs(
                     url=self.uri,
                 )
 
             jobs = resp.json()["data"]["records"]
 
-            if show_progress:
-                self.logger.info(f"Found {len(jobs)} import jobs")
+            self.logger.info(f"📋 Found {len(jobs)} import jobs")
+
+            # Log summary of jobs by state
+            if jobs:
+                states = {}
+                for job in jobs:
+                    state = job.get("state", "unknown")
+                    states[state] = states.get(state, 0) + 1
+
+                self.logger.info("Job summary by state:")
+                for state, count in states.items():
+                    self.logger.info(f"  {state}: {count} jobs")
+
+                # Log details of recent jobs
+                recent_jobs = sorted(jobs, key=lambda x: x.get("jobId", ""), reverse=True)[:5]
+                self.logger.info(f"Recent {min(5, len(jobs))} jobs:")
+                for job in recent_jobs:
+                    job_id = job.get("jobId", "unknown")
+                    state = job.get("state", "unknown")
+                    collection = job.get("collectionName", "unknown")
+                    imported_rows = job.get("importedRows", 0)
+                    self.logger.info(f"  Job {job_id}: {state} | Collection: {collection} | Rows: {imported_rows:,}")
 
             return jobs
 
         except Exception as e:
             self.logger.error(f"Failed to list import jobs: {e}")
+            self.logger.error(f"URI: {self.uri}")
+            if collection_name:
+                self.logger.error(f"Collection filter: {collection_name}")
             raise
 
 
@@ -205,22 +314,47 @@ def prepare_file_paths(files: list[str]) -> list[str]:
     Returns:
         List of prepared file paths
     """
+    logger = get_logger(__name__)
+    logger.info("Preparing file paths for bulk import")
+    logger.info(f"Input paths: {len(files)} items")
+
     prepared_files = []
 
     for file_path in files:
         path = Path(file_path)
+        logger.info(f"Processing path: {file_path}")
 
-        if path.is_dir():
-            # Add all parquet files in directory
+        if file_path.startswith("s3://"):
+            # S3/MinIO path - use as is
+            prepared_files.append(file_path)
+            logger.info(f"  Added S3 path: {file_path}")
+        elif path.is_dir():
+            # Local directory - find files
+            logger.info(f"  Processing directory: {path}")
             parquet_files = list(path.glob("*.parquet"))
             if parquet_files:
                 prepared_files.extend([str(f) for f in parquet_files])
+                logger.info(f"  Found {len(parquet_files)} parquet files")
+                for pf in parquet_files:
+                    size_mb = pf.stat().st_size / (1024 * 1024)
+                    logger.info(f"    {pf.name} ({size_mb:.2f} MB)")
             else:
                 # Add all files in directory
                 all_files = [f for f in path.iterdir() if f.is_file()]
                 prepared_files.extend([str(f) for f in all_files])
-        else:
-            # Add single file
+                logger.info(f"  Found {len(all_files)} other files")
+                for af in all_files:
+                    size_mb = af.stat().st_size / (1024 * 1024)
+                    logger.info(f"    {af.name} ({size_mb:.2f} MB)")
+        elif path.exists():
+            # Single local file
             prepared_files.append(str(path))
+            size_mb = path.stat().st_size / (1024 * 1024)
+            logger.info(f"  Added file: {path.name} ({size_mb:.2f} MB)")
+        else:
+            # Path doesn't exist locally, might be S3 or remote
+            prepared_files.append(file_path)
+            logger.info(f"  Added path (not found locally): {file_path}")
 
+    logger.info(f"✓ Prepared {len(prepared_files)} files for import")
     return prepared_files

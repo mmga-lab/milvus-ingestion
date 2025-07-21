@@ -248,7 +248,7 @@ def _estimate_row_size_from_sample(
                 indices = np.random.choice(max_dim, non_zero_count, replace=False)
                 values = np.random.random(non_zero_count)
                 sparse_vector = {
-                    str(index): float(value) for index, value in zip(indices, values)
+                    str(index): float(value) for index, value in zip(indices, values, strict=False)
                 }
                 sparse_vectors.append(sparse_vector)
             data[field_name] = sparse_vectors
@@ -813,7 +813,7 @@ def generate_data_optimized(
                     values = np.random.random(non_zero_count)
                     sparse_vector = {
                         str(index): float(value)
-                        for index, value in zip(indices, values)
+                        for index, value in zip(indices, values, strict=False)
                     }
                     sparse_vectors.append(sparse_vector)
                 data[field_name] = sparse_vectors
@@ -823,6 +823,17 @@ def generate_data_optimized(
 
         # Create DataFrame
         df = pd.DataFrame(data)
+
+        # Convert JSON fields to strings for Parquet storage
+        if format.lower() == "parquet":
+            for field in fields:
+                if field["type"] == "JSON":
+                    field_name = field["name"]
+                    if field_name in df.columns:
+                        # Convert JSON objects to JSON strings for Parquet storage
+                        df[field_name] = df[field_name].apply(
+                            lambda x: json.dumps(x, ensure_ascii=False) if x is not None else None
+                        )
 
         # Write file
         write_start = time.time()

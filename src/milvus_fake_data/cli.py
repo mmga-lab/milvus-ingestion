@@ -890,7 +890,7 @@ def insert_to_milvus(
     except ValueError as e:
         display_error(f"Invalid input: {e}")
     except Exception as e:
-        log_error_with_context(logger, e, {"data_path": str(data_path), "uri": uri})
+        log_error_with_context(e, {"data_path": str(data_path), "uri": uri})
         display_error(f"Insert failed: {e}")
 
 

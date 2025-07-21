@@ -6,7 +6,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
-from pymilvus import MilvusClient, DataType
+from pymilvus import DataType, MilvusClient
 from rich.progress import (
     BarColumn,
     Progress,
@@ -257,18 +257,23 @@ class MilvusInserter:
                         auto_id=field_info.get("auto_id", False),
                     )
             elif field_type == "Array":
-                schema.add_field(
-                    field_name=field_name,
-                    datatype=milvus_type,
-                    max_capacity=field_info.get("max_capacity"),
-                    element_type=self._get_milvus_datatype(
+                kwargs = {
+                    "field_name": field_name,
+                    "datatype": milvus_type,
+                    "max_capacity": field_info.get("max_capacity"),
+                    "element_type": self._get_milvus_datatype(
                         field_info.get("element_type")
                     )
                     if field_info.get("element_type")
                     else None,
-                    is_primary=field_info.get("is_primary", False),
-                    auto_id=field_info.get("auto_id", False),
-                )
+                    "is_primary": field_info.get("is_primary", False),
+                    "auto_id": field_info.get("auto_id", False),
+                }
+                # Add max_length for VarChar element type
+                if field_info.get("element_type") in ["VarChar", "String"]:
+                    kwargs["max_length"] = field_info.get("max_length", 65535)
+
+                schema.add_field(**kwargs)
             else:
                 schema.add_field(
                     field_name=field_name,
@@ -378,6 +383,8 @@ class MilvusInserter:
         self, df: pd.DataFrame, metadata: dict[str, Any]
     ) -> list[dict[str, Any]]:
         """Convert DataFrame to list of dictionaries."""
+        import numpy as np
+
         # Convert DataFrame to list of dictionaries
         data_list = []
 
@@ -405,6 +412,34 @@ class MilvusInserter:
                         value, field_type
                     )
                     record[field_name] = converted_value
+                elif field_type == "Array":
+                    # Convert array field - ensure it's a list
+                    # Check for numpy array first to avoid ambiguous truth value error
+                    if isinstance(value, np.ndarray):
+                        record[field_name] = value.tolist()
+                    elif isinstance(value, list):
+                        record[field_name] = value
+                    elif pd.isna(value):
+                        record[field_name] = []
+                    else:
+                        record[field_name] = [value] if value is not None else []
+                elif field_type == "JSON":
+                    # Convert JSON field - handle both dict and string formats
+                    if pd.isna(value):
+                        record[field_name] = None
+                    elif isinstance(value, str):
+                        # JSON stored as string in Parquet - convert back to dict for insert
+                        try:
+                            import json
+                            record[field_name] = json.loads(value)
+                        except (json.JSONDecodeError, TypeError):
+                            # If parsing fails, treat as string
+                            record[field_name] = value
+                    elif isinstance(value, (dict, list)):
+                        # Already a JSON object
+                        record[field_name] = value
+                    else:
+                        record[field_name] = value
                 else:
                     # Scalar fields - convert to native Python types
                     if pd.isna(value):
@@ -425,14 +460,19 @@ class MilvusInserter:
         import numpy as np
 
         if field_type == "Float16Vector":
-            # Convert uint8 data to float16 numpy array
+            # Convert data to float16 numpy array
             if isinstance(vector_data, (list, np.ndarray)):
-                uint8_array = np.array(vector_data, dtype=np.uint8)
+                # First ensure it's uint8
+                if isinstance(vector_data, np.ndarray) and vector_data.dtype != np.uint8:
+                    uint8_array = vector_data.astype(np.uint8)
+                else:
+                    uint8_array = np.array(vector_data, dtype=np.uint8)
+                # Then view as float16
                 float16_array = uint8_array.view(np.float16)
-                return np.ascontiguousarray(float16_array)
+                return np.ascontiguousarray(float16_array)  # Return numpy array for Milvus
             return vector_data
         elif field_type == "BFloat16Vector":
-            # Convert uint8 data to bfloat16 numpy array
+            # Convert data to bfloat16 numpy array
             try:
                 import ml_dtypes
 
@@ -444,14 +484,23 @@ class MilvusInserter:
                 return vector_data
 
             if isinstance(vector_data, (list, np.ndarray)):
-                uint8_array = np.array(vector_data, dtype=np.uint8)
+                # First ensure it's uint8
+                if isinstance(vector_data, np.ndarray) and vector_data.dtype != np.uint8:
+                    uint8_array = vector_data.astype(np.uint8)
+                else:
+                    uint8_array = np.array(vector_data, dtype=np.uint8)
+                # Then view as bfloat16
                 bfloat16_array = uint8_array.view(bfloat16)
-                return np.ascontiguousarray(bfloat16_array)
+                return np.ascontiguousarray(bfloat16_array)  # Return numpy array for Milvus
             return vector_data
         elif field_type == "BinaryVector":
-            # Convert uint8 data to bytes
+            # Convert data to bytes
             if isinstance(vector_data, (list, np.ndarray)):
-                uint8_array = np.array(vector_data, dtype=np.uint8)
+                # First ensure it's uint8
+                if isinstance(vector_data, np.ndarray) and vector_data.dtype != np.uint8:
+                    uint8_array = vector_data.astype(np.uint8)
+                else:
+                    uint8_array = np.array(vector_data, dtype=np.uint8)
                 return uint8_array.tobytes()
             return vector_data
         elif field_type == "SparseFloatVector":

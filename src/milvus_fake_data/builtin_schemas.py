@@ -93,6 +93,42 @@ BUILTIN_SCHEMAS = {
         "vector_dims": [128],
         "file": "cardinality_demo.json",
     },
+    "audio_transcripts": {
+        "name": "Audio Transcripts",
+        "description": "Audio transcription service with semantic search using Float16Vector embeddings",
+        "use_cases": [
+            "Speech-to-text search",
+            "Podcast transcription",
+            "Meeting recordings",
+        ],
+        "fields_count": 10,
+        "vector_dims": [768],
+        "file": "audio_transcripts.json",
+    },
+    "ai_conversations": {
+        "name": "AI Conversations",
+        "description": "AI chat conversation history with BFloat16Vector embeddings for semantic search",
+        "use_cases": [
+            "Chatbot analytics",
+            "Conversation search",
+            "AI interaction history",
+        ],
+        "fields_count": 13,
+        "vector_dims": [1024],
+        "file": "ai_conversations.json",
+    },
+    "face_recognition": {
+        "name": "Face Recognition",
+        "description": "Facial recognition system with BinaryVector for efficient biometric matching",
+        "use_cases": [
+            "Security systems",
+            "Identity verification",
+            "Access control",
+        ],
+        "fields_count": 14,
+        "vector_dims": [512, 256],
+        "file": "face_recognition.json",
+    },
 }
 
 

@@ -9,9 +9,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 pdm install        # Install with development dependencies (default behavior)
 pdm install --prod # Install production dependencies only
 ```
-### Run python
-```
-pdm run python
+### Running Python Scripts
+```bash
+pdm run python                    # Interactive Python with project dependencies
+pdm run python script.py          # Run a Python script with project dependencies
 ```
 
 ### Code Quality & Testing
@@ -26,19 +27,35 @@ pdm run mypy src
 # Testing
 pdm run pytest                                          # Run all tests
 pdm run pytest tests/test_generator.py                  # Run specific test file
+pdm run pytest tests/test_generator.py::TestClass      # Run specific test class
+pdm run pytest tests/test_generator.py::test_function  # Run specific test function
 pdm run pytest --cov=src --cov-report=html             # Run tests with coverage
+pdm run pytest --cov=src --cov-report=term-missing     # Show missing lines in terminal
+pdm run pytest -v -s                                    # Verbose output with print statements
+pdm run pytest -m "not slow"                            # Skip slow tests
+pdm run pytest -m integration                           # Run only integration tests
 
 
-### 测试环境地址
-milvus uri http://10.104.13.2:19530
-minio host 10.104.30.110
-minio ak/sk minioadmin/minioadmin
-minio bucket long-run-verify
+### Test Environment Configuration
+```
+# Milvus Test Instance
+MILVUS_URI=http://10.104.13.2:19530
 
-# Combined quality checks
-make lint test     # Run linting and tests together
-make check         # Alias for lint + test
+# MinIO Test Instance  
+MINIO_HOST=10.104.30.110
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+MINIO_BUCKET=long-run-verify
+```
+
+# Combined quality checks (via Makefile)
+make lint          # Run ruff format and check + mypy
+make test          # Run pytest
 make test-cov      # Run tests with coverage report
+make check         # Run lint + test together
+make clean         # Clean build artifacts and caches
+make build         # Build the package
+make publish       # Publish to PyPI
 ```
 
 ### Building & Publishing
@@ -96,6 +113,26 @@ milvus-fake-data to-milvus import my_collection data.parquet --uri http://192.16
 ```
 
 ## Architecture Overview
+
+### Project Structure
+```
+milvus-fake-data/
+├── src/milvus_fake_data/       # Main package
+│   ├── cli.py                  # CLI entry point
+│   ├── optimized_writer.py     # High-performance data generation
+│   ├── models.py               # Pydantic schema models
+│   ├── schema_manager.py       # Schema management
+│   ├── milvus_inserter.py      # Direct Milvus insertion
+│   ├── milvus_importer.py      # Bulk import from S3/MinIO
+│   ├── uploader.py             # S3/MinIO uploads
+│   └── schemas/                # Built-in schema JSON files
+├── tests/                      # Test suite
+│   ├── conftest.py            # Common test fixtures
+│   └── test_*.py              # Test modules
+├── pyproject.toml             # PDM configuration and metadata
+├── Makefile                   # Common development tasks
+└── README.md                  # User documentation
+```
 
 ### Core Modules
 - **cli.py**: High-performance command-line interface optimized for large-scale data generation
@@ -176,6 +213,38 @@ Uses Pydantic for comprehensive validation with helpful error messages. The vali
 - Tests cover validation, generation, CLI interface, and schema management
 - Integration tests for end-to-end workflows with 100K+ row datasets
 - Test fixtures in tests/conftest.py for common scenarios
+
+## Common Development Workflows
+
+### Adding a New Built-in Schema
+1. Create a JSON schema file in `src/milvus_fake_data/schemas/`
+2. Follow the existing schema format with proper field definitions
+3. Test the schema: `milvus-fake-data generate --builtin your_schema --rows 1000 --preview`
+4. Add documentation in README.md
+
+### Adding a New Field Type
+1. Update `models.py` to add the field type in `FieldType` enum
+2. Add validation logic in the corresponding field model (e.g., `VectorField`, `ScalarField`)
+3. Implement generation logic in `optimized_writer.py` in the `_generate_field_data` method
+4. Add tests in `tests/test_models.py` and `tests/test_optimized_writer.py`
+
+### Performance Testing
+```bash
+# Test with large datasets
+pdm run python -m cProfile -o profile.stats src/milvus_fake_data/cli.py generate --builtin simple --rows 1000000
+
+# Analyze profile
+pdm run python -m pstats profile.stats
+
+# Memory profiling
+pdm run python -m memory_profiler src/milvus_fake_data/cli.py generate --builtin simple --rows 1000000
+```
+
+### Debugging Tips
+1. Use `--preview` flag to inspect first 5 rows without full generation
+2. Use `--validate-only` to check schema without generating data
+3. Enable debug logging: `export LOGURU_LEVEL=DEBUG`
+4. For performance issues, check batch size with `--batch-size` parameter
 
 ## Important Notes
 
@@ -324,3 +393,32 @@ milvus-fake-data to-milvus import my_collection ./output/ --wait --timeout 300
 - Each import file should not exceed 16 GB
 - Maximum 1024 files per import request
 - Maximum 1024 concurrent import requests
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Out of Memory Errors**
+   - Reduce batch size: `--batch-size 10000`
+   - Enable file partitioning: `--max-rows-per-file 500000`
+   - Monitor memory usage during generation
+
+2. **Slow Generation Performance**
+   - Increase batch size for better CPU utilization: `--batch-size 100000`
+   - Use Parquet format (default) for best I/O performance
+   - Ensure you're using a modern multi-core CPU
+
+3. **Schema Validation Errors**
+   - Check field type requirements (e.g., `dim` for vectors, `max_length` for strings)
+   - Ensure exactly one primary key field
+   - Validate schema first: `--validate-only`
+
+4. **Milvus Connection Issues**
+   - Verify URI format: `http://host:port` (not `https://`)
+   - Check authentication token if required
+   - Test connection with simple schema first
+
+5. **S3/MinIO Upload Failures**
+   - Verify endpoint URL for MinIO: `--endpoint-url http://minio:9000`
+   - Check credentials: `--access-key-id KEY --secret-access-key SECRET`
+   - For SSL issues: `--no-verify-ssl`
