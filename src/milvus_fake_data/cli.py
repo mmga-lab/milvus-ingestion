@@ -1013,11 +1013,11 @@ def import_to_milvus(
 
         # Get list of data files to import (parquet and JSON files)
         data_files = []
-        
+
         # Find parquet files
         for parquet_file in local_path.glob("*.parquet"):
             data_files.append(s3_path + parquet_file.name)
-            
+
         # Find JSON files (exclude meta.json)
         for json_file in local_path.glob("*.json"):
             if json_file.name != "meta.json":

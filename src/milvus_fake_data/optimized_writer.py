@@ -19,36 +19,38 @@ from ml_dtypes import bfloat16
 logger.debug("Using NumPy vectorized operations with BLAS acceleration")
 
 
-def _generate_dynamic_field_data(dynamic_field: dict[str, Any], batch_size: int) -> list[Any]:
+def _generate_dynamic_field_data(
+    dynamic_field: dict[str, Any], batch_size: int
+) -> list[Any]:
     """Generate data for a single dynamic field.
-    
+
     Args:
         dynamic_field: Dynamic field definition from schema
         batch_size: Number of rows to generate
-        
+
     Returns:
         List of generated values for the dynamic field
     """
     field_type = dynamic_field.get("type", "String")
     probability = dynamic_field.get("probability", 1.0)
     values = dynamic_field.get("values")
-    
+
     # Determine which rows should have this field (based on probability)
     should_include = np.random.random(batch_size) < probability
-    result = []
-    
+    result: list[Any] = []
+
     for i in range(batch_size):
         if not should_include[i]:
             # Skip this field for this row (will not be added to the data)
             result.append(None)
             continue
-            
+
         if values:
             # Choose from predefined values
             value = np.random.choice(values)
             result.append(value)
             continue
-            
+
         # Generate based on type
         if field_type == "Bool":
             result.append(bool(np.random.randint(0, 2)))
@@ -66,7 +68,7 @@ def _generate_dynamic_field_data(dynamic_field: dict[str, Any], batch_size: int)
             length = np.random.randint(min_len, max_len + 1)
             # Generate random string with letters and numbers
             chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-            value = ''.join(np.random.choice(list(chars), size=length))
+            value = "".join(np.random.choice(list(chars), size=length))
             result.append(value)
         elif field_type == "Array":
             min_len = dynamic_field.get("array_min_length", 0)
@@ -86,13 +88,13 @@ def _generate_dynamic_field_data(dynamic_field: dict[str, Any], batch_size: int)
                 "id": int(np.random.randint(1, 1000)),
                 "name": f"dynamic_item_{np.random.randint(1, 1000)}",
                 "active": bool(np.random.randint(0, 2)),
-                "score": float(np.random.uniform(0, 100))
+                "score": float(np.random.uniform(0, 100)),
             }
             result.append(json_obj)
         else:
             # Default to string
             result.append(f"dynamic_value_{np.random.randint(1, 1000)}")
-    
+
     return result
 
 
@@ -352,16 +354,44 @@ def _estimate_row_size_from_sample(
 
             with open(tmp_file.name, "w") as f:
                 for i, record in enumerate(df.to_dict(orient="records")):
-                    # Handle numpy types
+                    # Apply the same field omission logic as the main JSON generation
+                    filtered_record = {}
                     for key, value in record.items():
+                        # Find field definition for this key
+                        field_def = None
+                        for field in fields:
+                            if field["name"] == key:
+                                field_def = field
+                                break
+                        
+                        # Handle numpy types
                         if isinstance(value, np.ndarray):
-                            record[key] = value.tolist()
+                            converted_value = value.tolist()
                         elif isinstance(value, np.generic):
-                            record[key] = value.item()
+                            converted_value = value.item()
+                        else:
+                            converted_value = value
+                        
+                        # Decide whether to include this field in JSON
+                        should_omit = False
+                        if field_def:
+                            import random
+                            
+                            # For nullable fields: randomly omit with 40% probability
+                            if field_def.get("nullable", False):
+                                should_omit = random.random() < 0.4
+                            
+                            # For default_value fields: randomly omit with 30% probability
+                            elif field_def.get("default_value") is not None:
+                                should_omit = random.random() < 0.3
+                        
+                        # Only add field to record if we shouldn't omit it
+                        if not should_omit:
+                            filtered_record[key] = converted_value
 
                     if i > 0:
                         f.write("\n")
-                    json.dump(record, f, ensure_ascii=False, separators=(",", ":"))
+                    json.dump(filtered_record, f, ensure_ascii=False, separators=(",", ":"))
 
         # Get file size
         file_size = Path(tmp_file.name).stat().st_size
@@ -376,11 +406,276 @@ def _estimate_row_size_from_sample(
     return bytes_per_row
 
 
+def _detect_uniform_column(column: pd.Series, field: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    Detect if a column has uniform values that can be optimized.
+    
+    Args:
+        column: pandas Series to analyze
+        field: Field definition for context
+        
+    Returns:
+        Optimization info if column can be optimized, None otherwise
+    """
+    default_value = field.get("default_value")
+    is_nullable = field.get("nullable", False)
+    
+    # Case 1: All values are null (for nullable fields)
+    if is_nullable and column.isna().all():
+        return {
+            "type": "all_null",
+            "value": None,
+            "reason": "naturally_all_null",
+            "recovery_strategy": "skip_field_use_null"
+        }
+    
+    # Case 2: All non-null values are the same as default_value
+    if default_value is not None:
+        non_null_mask = column.notna()
+        if non_null_mask.any():  # Has some non-null values
+            non_null_values = column[non_null_mask]
+            if len(non_null_values.unique()) == 1 and non_null_values.iloc[0] == default_value:
+                # All non-null values are default values
+                if non_null_mask.all():
+                    # All values are non-null defaults
+                    return {
+                        "type": "all_default",
+                        "value": default_value,
+                        "reason": "naturally_all_default",
+                        "recovery_strategy": "skip_field_use_default"
+                    }
+                else:
+                    # Mix of nulls and defaults - can optimize if nullable
+                    if is_nullable:
+                        return {
+                            "type": "null_and_default_only",
+                            "value": default_value,
+                            "null_count": column.isna().sum(),
+                            "default_count": non_null_mask.sum(),
+                            "reason": "naturally_mixed_null_default",
+                            "recovery_strategy": "skip_field_use_mixed"
+                        }
+    
+    # Case 3: All values are null and we have a default value (nullable + default)
+    if default_value is not None and is_nullable and column.isna().all():
+        return {
+            "type": "all_null_with_default",
+            "value": default_value,
+            "reason": "naturally_all_null_but_has_default",
+            "recovery_strategy": "skip_field_use_default"
+        }
+    
+    # Case 4: All values are the same (even without default_value)
+    unique_vals = column.dropna().unique()
+    if len(unique_vals) == 1 and column.notna().all():
+        return {
+            "type": "uniform_value",
+            "value": unique_vals[0],
+            "reason": "naturally_uniform",
+            "recovery_strategy": "skip_field_recreate_uniform"
+        }
+    
+    return None
+
+
+def _optimize_parquet_columns(df: pd.DataFrame, schema_fields: list[dict[str, Any]], format_type: str) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """
+    Optimize Parquet DataFrame by detecting and removing columns with uniform values.
+    This naturally occurs when data generation results in all same values for a column.
+    
+    Args:
+        df: DataFrame to optimize
+        schema_fields: Original schema field definitions  
+        format_type: Output format ('parquet' or 'json')
+        
+    Returns:
+        Tuple of (optimized_df, optimization_info)
+    """
+    if format_type.lower() != "parquet":
+        # Only optimize Parquet format
+        return df, {}
+    
+    optimization_info = {}
+    columns_to_drop = []
+    original_size = df.memory_usage(deep=True).sum()
+    
+    # Create field lookup by name
+    field_by_name = {field["name"]: field for field in schema_fields}
+    
+    for column_name in df.columns:
+        if column_name not in field_by_name:
+            continue
+            
+        field = field_by_name[column_name]
+        column = df[column_name]
+        
+        # Skip optimization for certain field types
+        if field.get("is_primary", False) or field["type"] in ["FloatVector", "BinaryVector", "Float16Vector", "BFloat16Vector", "SparseFloatVector"]:
+            continue
+        
+        # Detect if this column can be optimized
+        uniform_info = _detect_uniform_column(column, field)
+        if uniform_info:
+            optimization_info[column_name] = uniform_info
+            optimization_info[column_name]["memory_savings_bytes"] = column.memory_usage(deep=True)
+            columns_to_drop.append(column_name)
+    
+    # Remove optimized columns
+    optimized_df = df.drop(columns=columns_to_drop) if columns_to_drop else df
+    
+    # Calculate space savings
+    if columns_to_drop:
+        optimized_size = optimized_df.memory_usage(deep=True).sum()
+        total_savings = original_size - optimized_size
+        
+        optimization_info["_summary"] = {
+            "columns_optimized": len(columns_to_drop),
+            "optimized_columns": list(columns_to_drop),
+            "total_memory_savings_bytes": total_savings,
+            "total_memory_savings_mb": round(total_savings / 1024 / 1024, 2),
+            "original_columns": len(df.columns),
+            "remaining_columns": len(optimized_df.columns),
+            "optimization_ratio": round((len(columns_to_drop) / len(df.columns)) * 100, 1) if df.columns.size > 0 else 0
+        }
+        
+        logger.info(f"Natural optimization: detected {len(columns_to_drop)} uniform columns ({', '.join(columns_to_drop)}), saved {optimization_info['_summary']['total_memory_savings_mb']:.2f}MB")
+    
+    return optimized_df, optimization_info
+
+
 def _generate_scalar_field_data(
     field: dict[str, Any], num_rows: int, pk_offset: int = 0
 ) -> np.ndarray | list:
     """
-    Generate data for a scalar field with support for cardinality and constraints.
+    Generate data for a scalar field with support for cardinality, constraints, and default values.
+
+    Args:
+        field: Field definition with type, constraints, cardinality, and default_value
+        num_rows: Number of rows to generate
+        pk_offset: Offset for primary key generation
+
+    Returns:
+        Generated data as numpy array or list
+    """
+    field_type = field["type"]
+
+    # Handle primary key generation
+    if (
+        field.get("is_primary", False)
+        and field_type == "Int64"
+        and not field.get("auto_id", False)
+    ):
+        return np.arange(pk_offset, pk_offset + num_rows, dtype=np.int64)
+
+    # Check if field is nullable (null probability from legacy generator)
+    is_nullable = field.get("nullable", False)
+    null_probability = 0.1  # 10% chance of null values, matching legacy generator
+    
+    # Check if field has a default value
+    default_value = field.get("default_value")
+    
+    # Handle fields with nullable or default_value
+    if is_nullable or default_value is not None:
+        # Small probability to force entire column to be uniform (for Parquet optimization testing)
+        uniform_column_probability = 0.05  # 5% chance
+        force_uniform = np.random.random() < uniform_column_probability
+        
+        if force_uniform:
+            # Decide what uniform value to use
+            if is_nullable and (default_value is None or np.random.random() < 0.5):
+                # Force all null (for nullable fields)
+                result = [None] * num_rows
+                logger.debug(f"Forced field '{field['name']}' to be all null for Parquet optimization testing")
+            elif default_value is not None:
+                # Force all default values
+                result = [default_value] * num_rows
+                logger.debug(f"Forced field '{field['name']}' to be all default value ({default_value}) for Parquet optimization testing")
+            else:
+                # Force all same generated value
+                uniform_value = _generate_regular_scalar_data(field, 1)[0]
+                result = [uniform_value] * num_rows
+                logger.debug(f"Forced field '{field['name']}' to be uniform value ({uniform_value}) for Parquet optimization testing")
+        else:
+            # Normal mixed generation
+            # Handle nullable fields - can generate null values
+            if is_nullable:
+                # For nullable fields, some values can be null
+                should_be_null = np.random.random(num_rows) < null_probability
+            else:
+                should_be_null = np.zeros(num_rows, dtype=bool)
+            
+            # Handle default_value fields - can use default values
+            if default_value is not None:
+                # For fields with defaults, some values can use the default
+                should_use_default = np.random.random(num_rows) < 0.3  # 30% use default
+                # But null takes precedence over default
+                should_use_default = should_use_default & (~should_be_null)
+            else:
+                should_use_default = np.zeros(num_rows, dtype=bool)
+            
+            # Generate regular values for remaining rows
+            need_regular_values = (~should_be_null) & (~should_use_default)
+            regular_count = np.sum(need_regular_values)
+            
+            if regular_count > 0:
+                regular_data = _generate_regular_scalar_data(field, regular_count)
+            else:
+                regular_data = []
+            
+            # Build result array
+            result = []
+            regular_index = 0
+            
+            for i in range(num_rows):
+                if should_be_null[i]:
+                    result.append(None)
+                elif should_use_default[i]:
+                    result.append(default_value)
+                else:
+                    result.append(regular_data[regular_index])
+                    regular_index += 1
+
+        # Convert to appropriate type based on field type
+        # Handle None values properly for numpy arrays
+        if field_type in ["Int8", "Int16", "Int32", "Int64"]:
+            if any(x is None for x in result):
+                # Use nullable integer type for pandas/numpy compatibility
+                return result  # Return as list to preserve None values
+            else:
+                dtype_map = {
+                    "Int8": np.int8,
+                    "Int16": np.int16,
+                    "Int32": np.int32,
+                    "Int64": np.int64,
+                }
+                return np.array(result, dtype=dtype_map[field_type])
+        elif field_type in ["Float", "Double"]:
+            if any(x is None for x in result):
+                # Convert None to NaN for float types
+                result_with_nan = [np.nan if x is None else x for x in result]
+                dtype = np.float32 if field_type == "Float" else np.float64
+                return np.array(result_with_nan, dtype=dtype)
+            else:
+                dtype = np.float32 if field_type == "Float" else np.float64
+                return np.array(result, dtype=dtype)
+        elif field_type == "Bool":
+            if any(x is None for x in result):
+                # Return as list to preserve None values for boolean fields
+                return result
+            else:
+                return np.array(result, dtype=bool)
+        else:  # String types
+            return result
+
+    # No default value - use regular generation logic
+    return _generate_regular_scalar_data(field, num_rows, pk_offset)
+
+
+def _generate_regular_scalar_data(
+    field: dict[str, Any], num_rows: int, pk_offset: int = 0
+) -> np.ndarray | list:
+    """
+    Generate regular scalar field data without default value considerations.
 
     Args:
         field: Field definition with type, constraints, and cardinality
@@ -392,14 +687,6 @@ def _generate_scalar_field_data(
     """
     field_name = field["name"]
     field_type = field["type"]
-
-    # Handle primary key generation
-    if (
-        field.get("is_primary", False)
-        and field_type == "Int64"
-        and not field.get("auto_id", False)
-    ):
-        return np.arange(pk_offset, pk_offset + num_rows, dtype=np.int64)
 
     # Get constraints
     min_val = field.get("min")
@@ -607,6 +894,7 @@ def generate_data_optimized(
     all_files_created = []
     total_generation_time = 0.0
     total_write_time = 0.0
+    all_optimization_info = []  # Collect optimization info from all files
 
     while remaining_rows > 0:
         # Determine batch size for this file (respect both size and row constraints)
@@ -902,33 +1190,52 @@ def generate_data_optimized(
         if enable_dynamic and dynamic_fields:
             logger.debug(f"Generating {len(dynamic_fields)} dynamic fields")
             meta_data = []
-            
+
             # Generate $meta field containing all dynamic fields
-            for i in range(current_batch_rows):
+            for _ in range(current_batch_rows):
                 row_meta = {}
-                
+
                 for dynamic_field in dynamic_fields:
                     field_name = dynamic_field.get("name")
-                    field_values = _generate_dynamic_field_data(dynamic_field, 1)  # Generate one value at a time
-                    
+                    field_values = _generate_dynamic_field_data(
+                        dynamic_field, 1
+                    )  # Generate one value at a time
+
                     # Only add the field if it has a non-None value
                     if field_values[0] is not None:
                         row_meta[field_name] = field_values[0]
-                
+
                 # Add the meta object (can be empty if no dynamic fields were generated for this row)
                 meta_data.append(row_meta if row_meta else {})
-            
+
             # Add $meta field to main data
             if meta_data:
                 data["$meta"] = meta_data
                 non_empty_count = sum(1 for meta in meta_data if meta)
-                logger.debug(f"Generated $meta field with dynamic data for {non_empty_count}/{current_batch_rows} rows")
+                logger.debug(
+                    f"Generated $meta field with dynamic data for {non_empty_count}/{current_batch_rows} rows"
+                )
 
         batch_generation_time = time.time() - generation_start
         total_generation_time += batch_generation_time
 
         # Create DataFrame
         df = pd.DataFrame(data)
+
+        # Apply Parquet column optimization (only for Parquet format)
+        optimization_info = {}
+        if format.lower() == "parquet":
+            df, optimization_info = _optimize_parquet_columns(df, fields, format)
+            
+        # Collect optimization info if any optimizations were made
+        if optimization_info and "_summary" in optimization_info:
+            file_optimization = {
+                "file_index": file_index,
+                "file_name": f"data-{file_index+1:05d}-of-{total_files:05d}.parquet" if total_files > 1 else "data.parquet",
+                "rows": current_batch_rows,
+                "optimization": optimization_info
+            }
+            all_optimization_info.append(file_optimization)
 
         # Convert JSON fields to strings for Parquet storage
         if format.lower() == "parquet":
@@ -943,7 +1250,7 @@ def generate_data_optimized(
                             if x is not None
                             else None
                         )
-            
+
             # Handle $meta field (contains all dynamic fields as JSON)
             if "$meta" in df.columns:
                 df["$meta"] = df["$meta"].apply(
@@ -989,15 +1296,46 @@ def generate_data_optimized(
             # Write JSON in Milvus bulk import format (list of dict)
             rows_data = []
             for record in df.to_dict(orient="records"):
-                # Handle numpy types
+                # Handle numpy types and field omission for nullable/default fields
                 row_record = {}
                 for key, value in record.items():
+                    # Find field definition for this key
+                    field_def = None
+                    for field in fields:
+                        if field["name"] == key:
+                            field_def = field
+                            break
+                    
+                    # Handle value conversion
                     if isinstance(value, np.ndarray):
-                        row_record[key] = value.tolist()
+                        converted_value = value.tolist()
                     elif isinstance(value, np.generic):
-                        row_record[key] = value.item()
+                        converted_value = value.item()
                     else:
-                        row_record[key] = value
+                        converted_value = value
+                    
+                    # Decide how to handle this field in JSON
+                    if field_def:
+                        import random
+                        
+                        # For nullable fields: randomly omit with 40% probability (Milvus will handle as null)
+                        if field_def.get("nullable", False):
+                            should_omit = random.random() < 0.4
+                            if not should_omit:
+                                row_record[key] = converted_value
+                        
+                        # For default_value fields: randomly omit with 30% probability (Milvus will use default)
+                        elif field_def.get("default_value") is not None:
+                            should_omit = random.random() < 0.3
+                            if not should_omit:
+                                row_record[key] = converted_value
+                        else:
+                            # Regular field - always include
+                            row_record[key] = converted_value
+                    else:
+                        # Field definition not found - include as-is
+                        row_record[key] = converted_value
+                
                 rows_data.append(row_record)
 
             # Write as JSON array for Milvus bulk import compatibility (list of dict)
@@ -1033,7 +1371,7 @@ def generate_data_optimized(
     meta_file = output_dir / "meta.json"
     total_time = time.time() - start_time
 
-    meta_data = {
+    metadata = {
         "schema": schema,
         "generation_info": {
             "total_rows": rows,
@@ -1049,9 +1387,39 @@ def generate_data_optimized(
             "rows_per_second": rows / total_time,
         },
     }
+    
+    # Add optimization information if any occurred
+    if all_optimization_info:
+        # Calculate total optimization statistics
+        total_optimized_columns = 0
+        total_savings_mb = 0.0
+        optimized_files = 0
+        
+        for file_info in all_optimization_info:
+            if "_summary" in file_info["optimization"]:
+                summary = file_info["optimization"]["_summary"]
+                total_optimized_columns += summary.get("columns_optimized", 0)
+                total_savings_mb += summary.get("total_memory_savings_mb", 0.0)
+                optimized_files += 1
+        
+        metadata["generation_info"]["parquet_optimization"] = {
+            "enabled": True,
+            "files_optimized": optimized_files,
+            "total_files": len(all_files_created),
+            "total_columns_optimized": total_optimized_columns,
+            "total_savings_mb": round(total_savings_mb, 2),
+            "optimization_details": all_optimization_info
+        }
+    elif format.lower() == "parquet":
+        metadata["generation_info"]["parquet_optimization"] = {
+            "enabled": True,
+            "files_optimized": 0,
+            "total_files": len(all_files_created),
+            "note": "No uniform columns detected for optimization"
+        }
 
     with open(meta_file, "w") as f:
-        json.dump(meta_data, f, indent=2)
+        json.dump(metadata, f, indent=2)
 
     logger.info(
         f"Total generation completed: {rows:,} rows in {len(all_files_created)} file(s)"

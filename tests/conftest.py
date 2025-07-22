@@ -192,6 +192,52 @@ def performance_test_schema() -> dict[str, Any]:
     }
 
 
+@pytest.fixture
+def default_values_schema() -> dict[str, Any]:
+    """Schema with default values for testing default_value functionality."""
+    return {
+        "collection_name": "default_values_test",
+        "fields": [
+            {"name": "id", "type": "Int64", "is_primary": True, "auto_id": True},
+            {"name": "title", "type": "VarChar", "max_length": 200},
+            {
+                "name": "category",
+                "type": "VarChar",
+                "max_length": 50,
+                "default_value": "general",
+            },
+            {
+                "name": "priority",
+                "type": "Int64",
+                "default_value": 0,
+                "min": 0,
+                "max": 10,
+            },
+            {
+                "name": "score",
+                "type": "Float",
+                "default_value": 5.0,
+                "min": 0.0,
+                "max": 10.0,
+            },
+            {"name": "is_active", "type": "Bool", "default_value": True},
+            {
+                "name": "status",
+                "type": "VarChar",
+                "max_length": 20,
+                "default_value": "pending",
+            },
+            {
+                "name": "description",
+                "type": "VarChar",
+                "max_length": 1000,
+                "nullable": True,
+            },
+            {"name": "embedding", "type": "FloatVector", "dim": 128},
+        ],
+    }
+
+
 # Pytest configuration
 def pytest_configure(config):
     """Configure pytest with custom markers."""

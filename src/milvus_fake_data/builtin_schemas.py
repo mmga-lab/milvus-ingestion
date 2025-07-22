@@ -137,6 +137,18 @@ BUILTIN_SCHEMAS = {
         "vector_dims": [512, 256],
         "file": "face_recognition.json",
     },
+    "default_values_demo": {
+        "name": "Default Values Demo",
+        "description": "Demonstration of default_value field parameter for handling missing data during insertion",
+        "use_cases": [
+            "Data migration with missing values",
+            "Flexible data insertion",
+            "Schema with fallback values",
+        ],
+        "fields_count": 9,
+        "vector_dims": [768],
+        "file": "default_values_demo.json",
+    },
 }
 
 

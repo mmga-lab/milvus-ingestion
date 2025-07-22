@@ -128,10 +128,10 @@ class MilvusInserter:
         data_files = []
         parquet_files = sorted(data_path.glob("*.parquet"))
         json_files = sorted(data_path.glob("*.json"))
-        
+
         # Exclude meta.json from json files
         json_files = [f for f in json_files if f.name != "meta.json"]
-        
+
         if parquet_files:
             data_files = parquet_files
             file_format = "parquet"
@@ -139,7 +139,9 @@ class MilvusInserter:
             data_files = json_files
             file_format = "json"
         else:
-            raise FileNotFoundError(f"No parquet or json data files found in {data_path}")
+            raise FileNotFoundError(
+                f"No parquet or json data files found in {data_path}"
+            )
 
         self.logger.info(f"Found {len(data_files)} {file_format} file(s) to process")
 
@@ -153,10 +155,12 @@ class MilvusInserter:
             # Read data file based on format
             if file_format == "parquet":
                 df = pd.read_parquet(data_file)
+                data_source = df
+                total_rows = len(df)
             else:  # json format
-                df = self._read_json_file(data_file)
-            
-            total_rows = len(df)
+                data_list = self._read_json_file(data_file)
+                data_source = data_list
+                total_rows = len(data_list)
 
             if show_progress:
                 with Progress(
@@ -172,19 +176,40 @@ class MilvusInserter:
 
                     # Insert in batches
                     for i in range(0, total_rows, batch_size):
-                        batch_df = df.iloc[i : i + batch_size]
-                        try:
-                            # Convert DataFrame to list of dictionaries
-                            data = self._convert_dataframe_to_dict_list(
-                                batch_df, metadata
-                            )
+                        if file_format == "parquet":
+                            batch_df = data_source.iloc[i : i + batch_size]
+                            try:
+                                # Convert DataFrame to list of dictionaries
+                                data = self._convert_dataframe_to_dict_list(
+                                    batch_df, metadata
+                                )
+                                batch_size_actual = len(batch_df)
+                            except Exception as e:
+                                self.logger.error(
+                                    f"Failed to convert batch {i // batch_size}: {e}"
+                                )
+                                failed_batches.append(
+                                    {
+                                        "file": data_file.name,
+                                        "batch": i // batch_size,
+                                        "error": str(e),
+                                    }
+                                )
+                                progress.update(task, advance=batch_size)
+                                continue
+                        else:  # json format
+                            # For JSON, data is already in the correct format
+                            batch_data = data_source[i : i + batch_size]
+                            data = self._process_json_batch(batch_data, metadata)
+                            batch_size_actual = len(batch_data)
 
+                        try:
                             # Insert using MilvusClient
                             self.client.insert(
                                 collection_name=final_collection_name, data=data
                             )
-                            total_inserted += len(batch_df)
-                            progress.update(task, advance=len(batch_df))
+                            total_inserted += batch_size_actual
+                            progress.update(task, advance=batch_size_actual)
                         except Exception as e:
                             self.logger.error(
                                 f"Failed to insert batch {i // batch_size}: {e}"
@@ -196,20 +221,40 @@ class MilvusInserter:
                                     "error": str(e),
                                 }
                             )
-                            progress.update(task, advance=len(batch_df))
+                            progress.update(task, advance=batch_size_actual)
             else:
                 # Insert without progress bar
                 for i in range(0, total_rows, batch_size):
-                    batch_df = df.iloc[i : i + batch_size]
-                    try:
-                        # Convert DataFrame to list of dictionaries
-                        data = self._convert_dataframe_to_dict_list(batch_df, metadata)
+                    if file_format == "parquet":
+                        batch_df = data_source.iloc[i : i + batch_size]
+                        try:
+                            # Convert DataFrame to list of dictionaries
+                            data = self._convert_dataframe_to_dict_list(batch_df, metadata)
+                            batch_size_actual = len(batch_df)
+                        except Exception as e:
+                            self.logger.error(
+                                f"Failed to convert batch {i // batch_size}: {e}"
+                            )
+                            failed_batches.append(
+                                {
+                                    "file": data_file.name,
+                                    "batch": i // batch_size,
+                                    "error": str(e),
+                                }
+                            )
+                            continue
+                    else:  # json format
+                        # For JSON, data is already in the correct format
+                        batch_data = data_source[i : i + batch_size]
+                        data = self._process_json_batch(batch_data, metadata)
+                        batch_size_actual = len(batch_data)
 
+                    try:
                         # Insert using MilvusClient
                         self.client.insert(
                             collection_name=final_collection_name, data=data
                         )
-                        total_inserted += len(batch_df)
+                        total_inserted += batch_size_actual
                     except Exception as e:
                         self.logger.error(
                             f"Failed to insert batch {i // batch_size}: {e}"
@@ -256,30 +301,42 @@ class MilvusInserter:
 
             # Add field to schema
             if field_type in ["VarChar", "String"]:
-                schema.add_field(
-                    field_name=field_name,
-                    datatype=milvus_type,
-                    max_length=field_info.get("max_length", 65535),
-                    is_primary=field_info.get("is_primary", False),
-                    auto_id=field_info.get("auto_id", False),
-                )
+                kwargs = {
+                    "field_name": field_name,
+                    "datatype": milvus_type,
+                    "max_length": field_info.get("max_length", 65535),
+                    "is_primary": field_info.get("is_primary", False),
+                    "auto_id": field_info.get("auto_id", False),
+                }
+                # Add nullable and default_value if present
+                if "nullable" in field_info:
+                    kwargs["nullable"] = field_info["nullable"]
+                if "default_value" in field_info:
+                    kwargs["default_value"] = self._convert_default_value(field_info["default_value"], field_type)
+                schema.add_field(**kwargs)
             elif "Vector" in field_type:
                 # SparseFloatVector doesn't need dim parameter
                 if field_type == "SparseFloatVector":
-                    schema.add_field(
-                        field_name=field_name,
-                        datatype=milvus_type,
-                        is_primary=field_info.get("is_primary", False),
-                        auto_id=field_info.get("auto_id", False),
-                    )
+                    kwargs = {
+                        "field_name": field_name,
+                        "datatype": milvus_type,
+                        "is_primary": field_info.get("is_primary", False),
+                        "auto_id": field_info.get("auto_id", False),
+                    }
                 else:
-                    schema.add_field(
-                        field_name=field_name,
-                        datatype=milvus_type,
-                        dim=field_info.get("dim"),
-                        is_primary=field_info.get("is_primary", False),
-                        auto_id=field_info.get("auto_id", False),
-                    )
+                    kwargs = {
+                        "field_name": field_name,
+                        "datatype": milvus_type,
+                        "dim": field_info.get("dim"),
+                        "is_primary": field_info.get("is_primary", False),
+                        "auto_id": field_info.get("auto_id", False),
+                    }
+                # Vector fields typically don't have nullable/default_value, but add if present
+                if "nullable" in field_info:
+                    kwargs["nullable"] = field_info["nullable"]
+                if "default_value" in field_info:
+                    kwargs["default_value"] = field_info["default_value"]
+                schema.add_field(**kwargs)
             elif field_type == "Array":
                 kwargs = {
                     "field_name": field_name,
@@ -297,16 +354,51 @@ class MilvusInserter:
                 if field_info.get("element_type") in ["VarChar", "String"]:
                     kwargs["max_length"] = field_info.get("max_length", 65535)
 
+                # Add nullable and default_value if present
+                if "nullable" in field_info:
+                    kwargs["nullable"] = field_info["nullable"]
+                if "default_value" in field_info:
+                    kwargs["default_value"] = self._convert_default_value(field_info["default_value"], field_type)
+                    
                 schema.add_field(**kwargs)
             else:
-                schema.add_field(
-                    field_name=field_name,
-                    datatype=milvus_type,
-                    is_primary=field_info.get("is_primary", False),
-                    auto_id=field_info.get("auto_id", False),
-                )
+                # Scalar fields (Int64, Float, Bool, etc.)
+                kwargs = {
+                    "field_name": field_name,
+                    "datatype": milvus_type,
+                    "is_primary": field_info.get("is_primary", False),
+                    "auto_id": field_info.get("auto_id", False),
+                }
+                # Add nullable and default_value if present
+                if "nullable" in field_info:
+                    kwargs["nullable"] = field_info["nullable"]
+                if "default_value" in field_info:
+                    kwargs["default_value"] = self._convert_default_value(field_info["default_value"], field_type)
+                schema.add_field(**kwargs)
 
         return schema
+
+    def _convert_default_value(self, default_value: Any, field_type: str) -> Any:
+        """Convert default value to correct type for Milvus schema."""
+        if default_value is None:
+            return None
+            
+        # Type conversion for default values  
+        if field_type == "Float":
+            # Milvus Float (DataType.FLOAT) expects float32
+            import numpy as np
+            return np.float32(default_value)
+        elif field_type == "Double":
+            return float(default_value)
+        elif field_type in ["Int64", "Int32", "Int16", "Int8"]:
+            return int(default_value)
+        elif field_type == "Bool":
+            return bool(default_value)
+        elif field_type in ["String", "VarChar"]:
+            return str(default_value)
+        else:
+            # For other types, return as-is
+            return default_value
 
     def _create_index_params(self, metadata: dict[str, Any]) -> Any:
         """Create index parameters."""
@@ -400,7 +492,7 @@ class MilvusInserter:
     def _convert_dataframe_to_dict_list(
         self, df: pd.DataFrame, metadata: dict[str, Any]
     ) -> list[dict[str, Any]]:
-        """Convert DataFrame to list of dictionaries."""
+        """Convert DataFrame to list of dictionaries with missing column handling."""
         import numpy as np
 
         # Convert DataFrame to list of dictionaries
@@ -416,8 +508,16 @@ class MilvusInserter:
                 if self._is_auto_id_field(field_name, metadata):
                     continue
 
-                # Skip if column doesn't exist in DataFrame
+                # Handle missing columns based on nullable/default_value properties
                 if field_name not in df.columns:
+                    # Column is completely missing from DataFrame - skip it, let Milvus handle
+                    self.logger.debug(f"Field '{field_name}' missing from DataFrame - Milvus will handle with null/default")
+                    continue
+                
+                # Also handle cases where field exists in DataFrame but value is missing from this specific row
+                if field_name not in row:
+                    # Field is missing from this row - skip it, let Milvus handle
+                    self.logger.debug(f"Field '{field_name}' missing from row - Milvus will handle with null/default") 
                     continue
 
                 # Get the value
@@ -460,15 +560,33 @@ class MilvusInserter:
                     else:
                         record[field_name] = value
                 else:
-                    # Scalar fields - convert to native Python types
-                    if pd.isna(value):
-                        record[field_name] = None
+                    # Scalar fields - convert to native Python types with proper type conversion
+                    # Handle pd.isna() carefully to avoid array ambiguity errors
+                    try:
+                        is_na = pd.isna(value)
+                    except (ValueError, TypeError):
+                        # Handle cases where pd.isna fails (like on arrays)
+                        is_na = value is None
+                        
+                    if is_na:
+                        # Handle missing values based on field properties
+                        if field_info.get("nullable", False):
+                            record[field_name] = None
+                        elif field_info.get("default_value") is not None:
+                            record[field_name] = field_info["default_value"]
+                        else:
+                            record[field_name] = None
                     elif hasattr(value, "to_pydatetime"):
-                        record[field_name] = (
-                            value.to_pydatetime() if not pd.isna(value) else None
-                        )
+                        try:
+                            record[field_name] = (
+                                value.to_pydatetime() if not pd.isna(value) else None
+                            )
+                        except (ValueError, TypeError):
+                            record[field_name] = value
                     else:
-                        record[field_name] = value
+                        # Convert to correct data type based on field definition
+                        converted_value = self._convert_scalar_value(value, field_type, field_info)
+                        record[field_name] = converted_value
 
             # Handle $meta field - unpack dynamic fields
             if "$meta" in df.columns and "$meta" in row:
@@ -478,6 +596,7 @@ class MilvusInserter:
                     if isinstance(meta_value, str):
                         try:
                             import json
+
                             meta_dict = json.loads(meta_value)
                         except (json.JSONDecodeError, TypeError):
                             meta_dict = {}
@@ -485,7 +604,7 @@ class MilvusInserter:
                         meta_dict = meta_value
                     else:
                         meta_dict = {}
-                    
+
                     # Add all dynamic fields from $meta to the record
                     for key, value in meta_dict.items():
                         if value is not None:  # Only add non-None dynamic fields
@@ -495,26 +614,98 @@ class MilvusInserter:
 
         return data_list
 
+    def _convert_scalar_value(self, value: Any, field_type: str, field_info: dict[str, Any]) -> Any:
+        """Convert scalar value to correct Python type for Milvus insertion."""
+        import numpy as np
+        
+        # Handle NaN values with proper error handling for arrays
+        try:
+            is_na = pd.isna(value)
+        except (ValueError, TypeError):
+            # Handle cases where pd.isna fails (like on arrays)
+            is_na = value is None
+            
+        if is_na:
+            if field_info.get("nullable", False):
+                return None
+            elif field_info.get("default_value") is not None:
+                return field_info["default_value"]
+            else:
+                return None
+        
+        # Type conversion mapping
+        if field_type == "Int64":
+            # Convert to Python int (not numpy int64)
+            if isinstance(value, (int, np.integer)):
+                return int(value)
+            elif isinstance(value, (float, np.floating)):
+                return int(value) if not np.isnan(value) else None
+            elif isinstance(value, str):
+                try:
+                    return int(float(value))
+                except (ValueError, TypeError):
+                    return None
+            else:
+                return int(value) if value is not None else None
+                
+        elif field_type in ["Int32", "Int16", "Int8"]:
+            # Convert to Python int
+            if isinstance(value, (int, np.integer)):
+                return int(value)
+            elif isinstance(value, (float, np.floating)):
+                return int(value) if not np.isnan(value) else None
+            else:
+                return int(value) if value is not None else None
+                
+        elif field_type in ["Float", "Double"]:
+            # Convert to Python float
+            if isinstance(value, (float, np.floating)):
+                return float(value)
+            elif isinstance(value, (int, np.integer)):
+                return float(value)
+            else:
+                return float(value) if value is not None else None
+                
+        elif field_type == "Bool":
+            # Convert to Python bool
+            if isinstance(value, (bool, np.bool_)):
+                return bool(value)
+            elif isinstance(value, (int, np.integer)):
+                return bool(value)
+            else:
+                return bool(value) if value is not None else None
+                
+        elif field_type in ["String", "VarChar"]:
+            # Convert to Python str
+            if isinstance(value, str):
+                return value
+            else:
+                return str(value) if value is not None else None
+                
+        else:
+            # Return as-is for unknown types
+            return value
+
     def _read_json_file(self, json_path: Path) -> pd.DataFrame:
         """Read JSON file and convert to DataFrame."""
         import json
-        
+
         self.logger.info(f"Reading JSON file: {json_path}")
-        
+
         data_list = []
-        with open(json_path, 'r', encoding='utf-8') as f:
+        with open(json_path, encoding="utf-8") as f:
             # Handle both formats: single JSON array or line-delimited JSON
             content = f.read().strip()
-            
-            if content.startswith('['):
+
+            if content.startswith("["):
                 # JSON array format (list of dict) - Milvus bulk import format
                 data_list = json.loads(content)
-            elif content.startswith('{'):
+            elif content.startswith("{"):
                 # Check if it's legacy format with "rows" key or single object
                 data = json.loads(content)
-                if 'rows' in data and isinstance(data['rows'], list):
+                if "rows" in data and isinstance(data["rows"], list):
                     # Legacy Milvus bulk import format: {"rows": [...]}
-                    data_list = data['rows']
+                    data_list = data["rows"]
                 else:
                     # Single JSON object, treat as one record
                     data_list = [data]
@@ -525,15 +716,66 @@ class MilvusInserter:
                     line = line.strip()
                     if line:
                         data_list.append(json.loads(line))
-        
+
         if not data_list:
             raise ValueError(f"No data found in JSON file: {json_path}")
+
+        # Return the data_list directly for JSON files to preserve field omission
+        self.logger.info(f"Loaded {len(data_list)} rows from JSON file")
+
+        return data_list
+
+    def _process_json_batch(self, batch_data: list[dict], metadata: dict[str, Any]) -> list[dict[str, Any]]:
+        """Process JSON batch data for Milvus insertion - mainly type conversion."""
+        processed_data = []
         
-        # Convert to DataFrame
-        df = pd.DataFrame(data_list)
-        self.logger.info(f"Loaded {len(df)} rows from JSON file")
+        for record in batch_data:
+            processed_record = {}
+            
+            # Process each field according to schema definition
+            for field_info in metadata["schema"]["fields"]:
+                field_name = field_info["name"]
+                field_type = field_info["type"]
+                
+                # Skip auto_id fields
+                if field_info.get("auto_id", False):
+                    continue
+                
+                # If field is present in the record, convert it
+                if field_name in record:
+                    value = record[field_name]
+                    
+                    # Handle vector fields
+                    if "Vector" in field_type:
+                        processed_record[field_name] = self._convert_single_vector_data(value, field_type)
+                    elif field_type == "Array":
+                        # Convert array field
+                        if isinstance(value, list):
+                            processed_record[field_name] = value
+                        else:
+                            processed_record[field_name] = [value] if value is not None else []
+                    elif field_type == "JSON":
+                        # JSON field - keep as is
+                        processed_record[field_name] = value
+                    else:
+                        # Scalar field - convert type
+                        processed_record[field_name] = self._convert_scalar_value(value, field_type, field_info)
+                
+                # If field is missing, skip it - let Milvus handle with null/default
+                # This is the key difference from DataFrame processing
+            
+            # Handle $meta field if present
+            if "$meta" in record:
+                meta_value = record["$meta"]
+                if isinstance(meta_value, dict):
+                    # Add dynamic fields from $meta
+                    for key, value in meta_value.items():
+                        if value is not None:
+                            processed_record[key] = value
+            
+            processed_data.append(processed_record)
         
-        return df
+        return processed_data
 
     def _convert_single_vector_data(self, vector_data: Any, field_type: str) -> Any:
         """Convert single vector data to appropriate format for Milvus insert."""

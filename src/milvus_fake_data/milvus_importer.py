@@ -305,12 +305,20 @@ class MilvusBulkImporter:
 
             # Log file details
             for i, file_path in enumerate(actual_import_files, 1):
-                file_ext = ".parquet" if file_path.endswith(".parquet") else ".json" if file_path.endswith(".json") else "unknown"
+                file_ext = (
+                    ".parquet"
+                    if file_path.endswith(".parquet")
+                    else ".json"
+                    if file_path.endswith(".json")
+                    else "unknown"
+                )
                 if file_path.startswith("s3://"):
                     self.logger.info(f"File {i}: {file_path} ({file_ext}, S3/MinIO)")
                 else:
                     # For relative paths, just show the filename
-                    self.logger.info(f"File {i}: {file_path} ({file_ext}, relative to bucket)")
+                    self.logger.info(
+                        f"File {i}: {file_path} ({file_ext}, relative to bucket)"
+                    )
 
             # Prepare files as list of lists (each inner list is a batch)
             file_batches = [[f] for f in actual_import_files]
