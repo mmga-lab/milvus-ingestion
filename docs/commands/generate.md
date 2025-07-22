@@ -34,6 +34,7 @@ milvus-fake-data generate --builtin my_products --rows 1000
 - `face_recognition` - 人脸识别 (人脸特征、二进制向量)
 - `ecommerce_partitioned` - 分区电商模式
 - `cardinality_demo` - 基数约束演示
+- `dynamic_example` - 动态字段演示
 
 ### --schema PATH
 使用自定义模式文件 (JSON/YAML)
@@ -77,8 +78,11 @@ milvus-fake-data generate --builtin simple --rows 1000 --out ./data --force
 # Parquet 格式 (推荐，最快的I/O性能)
 milvus-fake-data generate --builtin simple --rows 10000 --format parquet
 
-# JSON 格式 (结构化数据，便于调试)
+# JSON 格式 (标准数组格式 [{}...], 便于调试和与Milvus bulk import兼容)
 milvus-fake-data generate --builtin simple --rows 10000 --format json
+
+# 动态字段示例 (推荐JSON格式便于查看$meta字段内容)
+milvus-fake-data generate --builtin dynamic_example --rows 1000 --format json
 ```
 
 ## 预览和验证选项

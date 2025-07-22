@@ -1011,13 +1011,20 @@ def import_to_milvus(
         print("Step 2: Importing data to Milvus...")
         importer = MilvusBulkImporter(uri=uri, token=token)
 
-        # Get list of data files to import
+        # Get list of data files to import (parquet and JSON files)
         data_files = []
+        
+        # Find parquet files
         for parquet_file in local_path.glob("*.parquet"):
             data_files.append(s3_path + parquet_file.name)
+            
+        # Find JSON files (exclude meta.json)
+        for json_file in local_path.glob("*.json"):
+            if json_file.name != "meta.json":
+                data_files.append(s3_path + json_file.name)
 
         if not data_files:
-            raise ValueError(f"No parquet files found in {local_path}")
+            raise ValueError(f"No parquet or json data files found in {local_path}")
 
         # Start import
         job_id = importer.bulk_import_files(

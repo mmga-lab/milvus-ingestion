@@ -19,7 +19,7 @@ milvus-fake-data to-milvus <SUBCOMMAND> [OPTIONS]
 
 ## insert - 直接插入数据
 
-直接从本地数据文件读取并插入到 Milvus 集合中，包括自动创建集合和索引。
+直接从本地数据文件（Parquet和JSON格式）读取并插入到 Milvus 集合中，包括自动创建集合和索引。
 
 ### 语法
 ```bash
@@ -103,11 +103,15 @@ milvus-fake-data to-milvus insert ./data --batch-size 5000
 
 #### 1. 基础本地插入
 ```bash
-# 生成数据
+# 生成Parquet格式数据
 milvus-fake-data generate --builtin simple --rows 10000 --out ./simple_data
 
-# 插入到本地 Milvus
+# 生成JSON格式数据
+milvus-fake-data generate --builtin simple --rows 10000 --format json --out ./simple_json
+
+# 插入到本地 Milvus (自动检测文件格式)
 milvus-fake-data to-milvus insert ./simple_data
+milvus-fake-data to-milvus insert ./simple_json
 ```
 
 #### 2. 远程 Milvus 插入
@@ -142,7 +146,7 @@ milvus-fake-data to-milvus insert ./test_data \
 
 ## import - 批量导入数据
 
-使用 Milvus 批量导入 API 从 S3/MinIO 导入预上传的数据文件，支持高性能异步导入。
+使用 Milvus 批量导入 API 从 S3/MinIO 导入预上传的数据文件（Parquet和JSON格式），支持高性能异步导入。
 
 ### 语法
 ```bash
@@ -266,10 +270,13 @@ milvus-fake-data to-milvus import \
 
 #### 1. 一步式导入（推荐）
 ```bash
-# 生成数据
+# 生成Parquet格式数据（默认）
 milvus-fake-data generate --builtin ecommerce --rows 1000000 --out ./ecommerce
 
-# 自动上传并导入
+# 生成JSON格式数据（与Milvus bulk import兼容）
+milvus-fake-data generate --builtin ecommerce --rows 1000000 --format json --out ./ecommerce_json
+
+# 自动上传并导入（支持两种格式）
 milvus-fake-data to-milvus import \
   --local-path ./ecommerce \
   --s3-path datasets/ecommerce/ \

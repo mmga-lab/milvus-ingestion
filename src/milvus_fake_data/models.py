@@ -32,6 +32,17 @@ class FieldType(str, Enum):
     SPARSE_FLOAT_VECTOR = "SparseFloatVector"
 
 
+class DynamicFieldType(str, Enum):
+    """Supported dynamic field types for data generation."""
+    
+    BOOL = "Bool"
+    INT = "Int"
+    FLOAT = "Float"
+    STRING = "String"
+    ARRAY = "Array"
+    JSON = "JSON"
+
+
 class ArrayElementType(str, Enum):
     """Supported array element types."""
 
@@ -44,6 +55,95 @@ class ArrayElementType(str, Enum):
     DOUBLE = "Double"
     VARCHAR = "VarChar"
     STRING = "String"
+
+
+class DynamicFieldSchema(BaseModel):
+    """Schema definition for dynamic fields that should be generated."""
+    
+    name: str = Field(..., description="Dynamic field name", min_length=1, max_length=255)
+    type: DynamicFieldType = Field(..., description="Dynamic field data type")
+    probability: float = Field(
+        default=1.0, 
+        description="Probability that this field appears in a row (0.0-1.0)",
+        ge=0.0,
+        le=1.0
+    )
+    
+    # Field type-specific constraints
+    min_value: int | float | None = Field(
+        default=None, description="Minimum value for numeric fields"
+    )
+    max_value: int | float | None = Field(
+        default=None, description="Maximum value for numeric fields"
+    )
+    min_length: int | None = Field(
+        default=None, description="Minimum length for string fields", ge=1
+    )
+    max_length: int | None = Field(
+        default=None, description="Maximum length for string fields", ge=1, le=1000
+    )
+    values: list[Any] | None = Field(
+        default=None, description="List of possible values to choose from"
+    )
+    array_min_length: int | None = Field(
+        default=None, description="Minimum array length", ge=0, le=100
+    )
+    array_max_length: int | None = Field(
+        default=None, description="Maximum array length", ge=1, le=100
+    )
+    
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """Validate field name."""
+        if not v.replace("_", "").isalnum():
+            raise ValueError(
+                f"Dynamic field name '{v}' is invalid. Field names must contain only letters, numbers, and underscores."
+            )
+        return v
+    
+    @model_validator(mode="after")
+    def validate_constraints(self) -> DynamicFieldSchema:
+        """Validate field-specific constraints."""
+        field_type = self.type.value.upper()
+        
+        # Validate min/max for numeric types
+        if field_type in {"INT", "FLOAT"}:
+            if self.min_value is not None and self.max_value is not None and self.min_value >= self.max_value:
+                raise ValueError(
+                    f"Dynamic field '{self.name}': min_value ({self.min_value}) must be less than max_value ({self.max_value})"
+                )
+        else:
+            if self.min_value is not None or self.max_value is not None:
+                raise ValueError(
+                    f"Dynamic field '{self.name}' with type '{self.type}' cannot have min_value/max_value constraints"
+                )
+        
+        # Validate length constraints for strings
+        if field_type == "STRING":
+            if self.min_length is not None and self.max_length is not None and self.min_length > self.max_length:
+                raise ValueError(
+                    f"Dynamic field '{self.name}': min_length ({self.min_length}) must be <= max_length ({self.max_length})"
+                )
+        else:
+            if self.min_length is not None or self.max_length is not None:
+                raise ValueError(
+                    f"Dynamic field '{self.name}' with type '{self.type}' cannot have length constraints"
+                )
+        
+        # Validate array constraints
+        if field_type == "ARRAY":
+            if self.array_min_length is not None and self.array_max_length is not None and self.array_min_length > self.array_max_length:
+                raise ValueError(
+                    f"Dynamic field '{self.name}': array_min_length ({self.array_min_length}) must be <= array_max_length ({self.array_max_length})"
+                )
+        else:
+            if self.array_min_length is not None or self.array_max_length is not None:
+                raise ValueError(
+                    f"Dynamic field '{self.name}' with type '{self.type}' cannot have array length constraints"
+                )
+        
+        return self
 
 
 class FieldSchema(BaseModel):
@@ -240,6 +340,14 @@ class CollectionSchema(BaseModel):
         ge=1,
         le=4096,
     )
+    enable_dynamic_field: bool = Field(
+        default=False,
+        description="Enable dynamic fields to store undefined fields in Milvus",
+    )
+    dynamic_fields: list[DynamicFieldSchema] | None = Field(
+        default=None,
+        description="Dynamic fields to generate when enable_dynamic_field is True",
+    )
 
     @field_validator("collection_name")
     @classmethod
@@ -316,6 +424,32 @@ class CollectionSchema(BaseModel):
                     f"Partition key field '{partition_field.name}' must be a scalar type (VARCHAR or integer), not {partition_field.type}.\n"
                     "Use VARCHAR or INT64 for partition keys."
                 )
+        
+        # Validate dynamic fields constraints
+        if self.dynamic_fields is not None:
+            if not self.enable_dynamic_field:
+                raise ValueError(
+                    "dynamic_fields can only be specified when enable_dynamic_field is True.\n"
+                    "Set enable_dynamic_field=true to use dynamic fields."
+                )
+            
+            # Check for duplicate dynamic field names
+            dynamic_field_names = [f.name for f in self.dynamic_fields]
+            duplicates = [name for name in set(dynamic_field_names) if dynamic_field_names.count(name) > 1]
+            if duplicates:
+                raise ValueError(
+                    f"Duplicate dynamic field names found: {', '.join(duplicates)}\n"
+                    "Each dynamic field must have a unique name."
+                )
+            
+            # Check for conflicts with regular field names
+            regular_field_names = [f.name for f in self.fields]
+            conflicts = [name for name in dynamic_field_names if name in regular_field_names]
+            if conflicts:
+                raise ValueError(
+                    f"Dynamic field names conflict with regular field names: {', '.join(conflicts)}\n"
+                    "Dynamic field names must be different from regular field names."
+                )
 
         return self
 
@@ -345,6 +479,7 @@ def get_schema_help() -> str:
 ```json
 {
   "collection_name": "my_collection",
+  "enable_dynamic_field": true,
   "fields": [
     {"name": "id", "type": "Int64", "is_primary": true},
     {"name": "title", "type": "VarChar", "max_length": 128},
@@ -389,6 +524,16 @@ def get_schema_help() -> str:
 - Required: `element_type`, `max_capacity`
 - If element_type is VarChar/String: also need `max_length`
 
+## Collection Properties
+
+### Optional Collection Properties
+- `collection_name`: Name of the collection
+- `enable_dynamic_field`: Enable dynamic fields (default: false)
+  - When true, allows inserting fields not defined in the schema
+  - Dynamic fields are stored in the special `$meta` field
+  - Can be queried using field names directly in filter expressions
+- `num_partitions`: Number of partitions for the collection (1-4096)
+
 ## Field Properties
 
 ### Required Properties
@@ -411,6 +556,7 @@ def get_schema_help() -> str:
 ```json
 {
   "collection_name": "products",
+  "enable_dynamic_field": false,
   "fields": [
     {"name": "id", "type": "Int64", "is_primary": true, "auto_id": true},
     {"name": "title", "type": "VarChar", "max_length": 200},
@@ -420,6 +566,32 @@ def get_schema_help() -> str:
     {"name": "metadata", "type": "JSON"},
     {"name": "embedding", "type": "FloatVector", "dim": 768}
   ]
+}
+```
+
+### Dynamic Fields Collection:
+```json
+{
+  "collection_name": "documents",
+  "enable_dynamic_field": true,
+  "fields": [
+    {"name": "id", "type": "Int64", "is_primary": true, "auto_id": true},
+    {"name": "content", "type": "VarChar", "max_length": 5000},
+    {"name": "embedding", "type": "FloatVector", "dim": 384}
+  ]
+}
+```
+
+When `enable_dynamic_field` is true, you can insert additional fields:
+```json
+{
+  "id": 1,
+  "content": "Document content",
+  "embedding": [0.1, 0.2, ...],
+  "author": "John Doe",
+  "tags": ["AI", "ML"],
+  "publish_date": "2024-01-15",
+  "metadata": {"source": "blog", "views": 1500}
 }
 ```
 

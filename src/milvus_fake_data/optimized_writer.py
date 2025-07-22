@@ -19,6 +19,83 @@ from ml_dtypes import bfloat16
 logger.debug("Using NumPy vectorized operations with BLAS acceleration")
 
 
+def _generate_dynamic_field_data(dynamic_field: dict[str, Any], batch_size: int) -> list[Any]:
+    """Generate data for a single dynamic field.
+    
+    Args:
+        dynamic_field: Dynamic field definition from schema
+        batch_size: Number of rows to generate
+        
+    Returns:
+        List of generated values for the dynamic field
+    """
+    field_type = dynamic_field.get("type", "String")
+    probability = dynamic_field.get("probability", 1.0)
+    values = dynamic_field.get("values")
+    
+    # Determine which rows should have this field (based on probability)
+    should_include = np.random.random(batch_size) < probability
+    result = []
+    
+    for i in range(batch_size):
+        if not should_include[i]:
+            # Skip this field for this row (will not be added to the data)
+            result.append(None)
+            continue
+            
+        if values:
+            # Choose from predefined values
+            value = np.random.choice(values)
+            result.append(value)
+            continue
+            
+        # Generate based on type
+        if field_type == "Bool":
+            result.append(bool(np.random.randint(0, 2)))
+        elif field_type == "Int":
+            min_val = dynamic_field.get("min_value", 0)
+            max_val = dynamic_field.get("max_value", 1000)
+            result.append(int(np.random.randint(min_val, max_val + 1)))
+        elif field_type == "Float":
+            min_val = dynamic_field.get("min_value", 0.0)
+            max_val = dynamic_field.get("max_value", 1.0)
+            result.append(float(np.random.uniform(min_val, max_val)))
+        elif field_type == "String":
+            min_len = dynamic_field.get("min_length", 5)
+            max_len = dynamic_field.get("max_length", 20)
+            length = np.random.randint(min_len, max_len + 1)
+            # Generate random string with letters and numbers
+            chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+            value = ''.join(np.random.choice(list(chars), size=length))
+            result.append(value)
+        elif field_type == "Array":
+            min_len = dynamic_field.get("array_min_length", 0)
+            max_len = dynamic_field.get("array_max_length", 5)
+            length = np.random.randint(min_len, max_len + 1)
+            # Generate array of strings or integers
+            if np.random.random() < 0.5:
+                # String array
+                array_data = [f"item_{j}" for j in range(length)]
+            else:
+                # Integer array
+                array_data = np.random.randint(0, 100, size=length).tolist()
+            result.append(array_data)
+        elif field_type == "JSON":
+            # Generate simple JSON object
+            json_obj = {
+                "id": int(np.random.randint(1, 1000)),
+                "name": f"dynamic_item_{np.random.randint(1, 1000)}",
+                "active": bool(np.random.randint(0, 2)),
+                "score": float(np.random.uniform(0, 100))
+            }
+            result.append(json_obj)
+        else:
+            # Default to string
+            result.append(f"dynamic_value_{np.random.randint(1, 1000)}")
+    
+    return result
+
+
 # Reserved for future parallel file generation
 # def _generate_single_file(...):
 #     pass
@@ -457,6 +534,8 @@ def generate_data_optimized(
         schema = json.load(f)
 
     fields = schema.get("fields", schema)
+    enable_dynamic = schema.get("enable_dynamic_field", False)
+    dynamic_fields = schema.get("dynamic_fields", []) if enable_dynamic else []
 
     # Create output directory
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -819,6 +898,32 @@ def generate_data_optimized(
                     sparse_vectors.append(sparse_vector)
                 data[field_name] = sparse_vectors
 
+        # Generate dynamic fields if enabled
+        if enable_dynamic and dynamic_fields:
+            logger.debug(f"Generating {len(dynamic_fields)} dynamic fields")
+            meta_data = []
+            
+            # Generate $meta field containing all dynamic fields
+            for i in range(current_batch_rows):
+                row_meta = {}
+                
+                for dynamic_field in dynamic_fields:
+                    field_name = dynamic_field.get("name")
+                    field_values = _generate_dynamic_field_data(dynamic_field, 1)  # Generate one value at a time
+                    
+                    # Only add the field if it has a non-None value
+                    if field_values[0] is not None:
+                        row_meta[field_name] = field_values[0]
+                
+                # Add the meta object (can be empty if no dynamic fields were generated for this row)
+                meta_data.append(row_meta if row_meta else {})
+            
+            # Add $meta field to main data
+            if meta_data:
+                data["$meta"] = meta_data
+                non_empty_count = sum(1 for meta in meta_data if meta)
+                logger.debug(f"Generated $meta field with dynamic data for {non_empty_count}/{current_batch_rows} rows")
+
         batch_generation_time = time.time() - generation_start
         total_generation_time += batch_generation_time
 
@@ -827,6 +932,7 @@ def generate_data_optimized(
 
         # Convert JSON fields to strings for Parquet storage
         if format.lower() == "parquet":
+            # Handle regular JSON fields
             for field in fields:
                 if field["type"] == "JSON":
                     field_name = field["name"]
@@ -837,6 +943,14 @@ def generate_data_optimized(
                             if x is not None
                             else None
                         )
+            
+            # Handle $meta field (contains all dynamic fields as JSON)
+            if "$meta" in df.columns:
+                df["$meta"] = df["$meta"].apply(
+                    lambda x: json.dumps(x, ensure_ascii=False)
+                    if x is not None and x != {}
+                    else None
+                )
 
         # Write file
         write_start = time.time()
@@ -872,19 +986,23 @@ def generate_data_optimized(
                     output_dir / f"data-{file_num:05d}-of-{total_files:05d}.json"
                 )
 
-            # Write JSON efficiently
-            with open(output_file, "w") as f:
-                for i, record in enumerate(df.to_dict(orient="records")):
-                    # Handle numpy types
-                    for key, value in record.items():
-                        if isinstance(value, np.ndarray):
-                            record[key] = value.tolist()
-                        elif isinstance(value, np.generic):
-                            record[key] = value.item()
+            # Write JSON in Milvus bulk import format (list of dict)
+            rows_data = []
+            for record in df.to_dict(orient="records"):
+                # Handle numpy types
+                row_record = {}
+                for key, value in record.items():
+                    if isinstance(value, np.ndarray):
+                        row_record[key] = value.tolist()
+                    elif isinstance(value, np.generic):
+                        row_record[key] = value.item()
+                    else:
+                        row_record[key] = value
+                rows_data.append(row_record)
 
-                    if i > 0:
-                        f.write("\n")
-                    json.dump(record, f, ensure_ascii=False, separators=(",", ":"))
+            # Write as JSON array for Milvus bulk import compatibility (list of dict)
+            with open(output_file, "w") as f:
+                json.dump(rows_data, f, ensure_ascii=False, separators=(",", ":"))
 
         else:
             raise ValueError(

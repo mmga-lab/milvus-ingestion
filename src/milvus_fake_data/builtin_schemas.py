@@ -21,6 +21,14 @@ BUILTIN_SCHEMAS = {
         "vector_dims": [128],
         "file": "simple.json",
     },
+    "dynamic_example": {
+        "name": "Dynamic Fields Example",
+        "description": "Example schema demonstrating dynamic field capabilities for flexible data insertion",
+        "use_cases": ["Dynamic data", "Schema evolution", "Flexible fields"],
+        "fields_count": 4,
+        "vector_dims": [384],
+        "file": "dynamic_example.json",
+    },
     "ecommerce": {
         "name": "E-commerce Products",
         "description": "Product catalog with multiple embeddings for search and recommendation",

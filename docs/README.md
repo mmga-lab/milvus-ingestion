@@ -15,6 +15,7 @@
 ### 教程和示例
 
 - [**快速开始**](tutorials/quickstart.md) - 5分钟上手指南
+- [**JSON格式指南**](tutorials/json-format-guide.md) - JSON格式和动态字段详解
 - [**性能调优**](tutorials/performance.md) - 大规模数据生成优化
 - [**完整工作流**](tutorials/complete-workflow.md) - 从生成到 Milvus 导入的完整流程
 - [**自定义模式**](tutorials/custom-schemas.md) - 创建和管理自定义数据模式
@@ -28,14 +29,21 @@
 # 快速生成数据预览
 milvus-fake-data generate --builtin simple --rows 1000 --preview
 
-# 生成大规模数据集
+# 生成大规模数据集（Parquet格式）
 milvus-fake-data generate --builtin ecommerce --rows 1000000 --out ./data
+
+# 生成JSON格式数据（便于调试）
+milvus-fake-data generate --builtin simple --rows 10000 --format json --out ./json_data
+
+# 生成带动态字段的数据
+milvus-fake-data generate --builtin dynamic_example --rows 5000 --format json --out ./dynamic_data
 
 # 查看所有可用模式
 milvus-fake-data schema list
 
-# 直接导入到 Milvus
+# 直接导入到 Milvus（支持Parquet和JSON）
 milvus-fake-data to-milvus insert ./data
+milvus-fake-data to-milvus insert ./json_data
 ```
 
 ### 命令结构
@@ -68,6 +76,7 @@ milvus-fake-data generate --builtin simple --rows 10000
 - `users` - 用户档案
 - `videos` - 视频库
 - `news` - 新闻文章
+- `dynamic_example` - 动态字段示例
 - 等等...
 
 ### 2. 自定义模式
@@ -93,7 +102,8 @@ milvus-fake-data generate --builtin my_products --rows 10000
 ### 性能优化
 - **大批量处理**: `--batch-size 100000` (默认: 50000)
 - **文件分割**: `--max-file-size 256` (MB), `--max-rows-per-file 1000000`
-- **格式选择**: `--format parquet` (最快) 或 `json`
+- **格式选择**: `--format parquet` (最快) 或 `json` (标准数组格式)
+- **动态字段**: 支持Milvus动态字段，使用 `$meta` 字段存储
 
 ### 集成功能
 - **S3/MinIO 上传**: 直接上传生成的数据到云存储

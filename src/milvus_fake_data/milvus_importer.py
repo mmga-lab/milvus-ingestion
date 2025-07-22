@@ -81,7 +81,8 @@ class MilvusBulkImporter:
 
     def _create_schema(self, metadata: dict[str, Any]) -> Any:
         """Create Milvus collection schema from metadata."""
-        schema = self.client.create_schema(enable_dynamic_field=True)
+        enable_dynamic = metadata["schema"].get("enable_dynamic_field", False)
+        schema = self.client.create_schema(enable_dynamic_field=enable_dynamic)
 
         for field_info in metadata["schema"]["fields"]:
             field_name = field_info["name"]
@@ -261,7 +262,7 @@ class MilvusBulkImporter:
         Args:
             collection_name: Target collection name
             files: List of directory paths for metadata loading
-            import_files: List of relative file paths to import (relative to bucket)
+            import_files: List of relative file paths to import (relative to bucket, supports parquet and json files)
             show_progress: Show progress bar
             create_collection: Try to create collection if it doesn't exist
             drop_if_exists: Drop collection if it already exists
@@ -304,11 +305,12 @@ class MilvusBulkImporter:
 
             # Log file details
             for i, file_path in enumerate(actual_import_files, 1):
+                file_ext = ".parquet" if file_path.endswith(".parquet") else ".json" if file_path.endswith(".json") else "unknown"
                 if file_path.startswith("s3://"):
-                    self.logger.info(f"File {i}: {file_path} (S3/MinIO)")
+                    self.logger.info(f"File {i}: {file_path} ({file_ext}, S3/MinIO)")
                 else:
                     # For relative paths, just show the filename
-                    self.logger.info(f"File {i}: {file_path} (relative to bucket)")
+                    self.logger.info(f"File {i}: {file_path} ({file_ext}, relative to bucket)")
 
             # Prepare files as list of lists (each inner list is a batch)
             file_batches = [[f] for f in actual_import_files]

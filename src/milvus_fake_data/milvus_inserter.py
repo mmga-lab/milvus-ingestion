@@ -124,20 +124,38 @@ class MilvusInserter:
             )
             self.logger.info(f"Created collection: {final_collection_name}")
 
-        # Find all parquet files
+        # Find data files (parquet or json)
+        data_files = []
         parquet_files = sorted(data_path.glob("*.parquet"))
-        if not parquet_files:
-            raise FileNotFoundError(f"No parquet files found in {data_path}")
+        json_files = sorted(data_path.glob("*.json"))
+        
+        # Exclude meta.json from json files
+        json_files = [f for f in json_files if f.name != "meta.json"]
+        
+        if parquet_files:
+            data_files = parquet_files
+            file_format = "parquet"
+        elif json_files:
+            data_files = json_files
+            file_format = "json"
+        else:
+            raise FileNotFoundError(f"No parquet or json data files found in {data_path}")
 
-        # Insert data from all parquet files
+        self.logger.info(f"Found {len(data_files)} {file_format} file(s) to process")
+
+        # Insert data from all data files
         total_inserted = 0
         failed_batches = []
 
-        for parquet_file in parquet_files:
-            self.logger.info(f"Processing {parquet_file.name}")
+        for data_file in data_files:
+            self.logger.info(f"Processing {data_file.name}")
 
-            # Read parquet file
-            df = pd.read_parquet(parquet_file)
+            # Read data file based on format
+            if file_format == "parquet":
+                df = pd.read_parquet(data_file)
+            else:  # json format
+                df = self._read_json_file(data_file)
+            
             total_rows = len(df)
 
             if show_progress:
@@ -149,7 +167,7 @@ class MilvusInserter:
                     TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
                 ) as progress:
                     task = progress.add_task(
-                        f"Inserting {parquet_file.name}", total=total_rows
+                        f"Inserting {data_file.name}", total=total_rows
                     )
 
                     # Insert in batches
@@ -173,7 +191,7 @@ class MilvusInserter:
                             )
                             failed_batches.append(
                                 {
-                                    "file": parquet_file.name,
+                                    "file": data_file.name,
                                     "batch": i // batch_size,
                                     "error": str(e),
                                 }
@@ -198,7 +216,7 @@ class MilvusInserter:
                         )
                         failed_batches.append(
                             {
-                                "file": parquet_file.name,
+                                "file": data_file.name,
                                 "batch": i // batch_size,
                                 "error": str(e),
                             }
@@ -226,7 +244,8 @@ class MilvusInserter:
     def _create_schema(self, metadata: dict[str, Any]) -> Any:
         """Create Milvus collection schema."""
         # Use MilvusClient's create_schema method
-        schema = self.client.create_schema(enable_dynamic_field=True)
+        enable_dynamic = metadata["schema"].get("enable_dynamic_field", False)
+        schema = self.client.create_schema(enable_dynamic_field=enable_dynamic)
 
         for field_info in metadata["schema"]["fields"]:
             field_name = field_info["name"]
@@ -451,9 +470,70 @@ class MilvusInserter:
                     else:
                         record[field_name] = value
 
+            # Handle $meta field - unpack dynamic fields
+            if "$meta" in df.columns and "$meta" in row:
+                meta_value = row["$meta"]
+                if not pd.isna(meta_value) and meta_value is not None:
+                    # Parse $meta field (may be stored as JSON string in Parquet)
+                    if isinstance(meta_value, str):
+                        try:
+                            import json
+                            meta_dict = json.loads(meta_value)
+                        except (json.JSONDecodeError, TypeError):
+                            meta_dict = {}
+                    elif isinstance(meta_value, dict):
+                        meta_dict = meta_value
+                    else:
+                        meta_dict = {}
+                    
+                    # Add all dynamic fields from $meta to the record
+                    for key, value in meta_dict.items():
+                        if value is not None:  # Only add non-None dynamic fields
+                            record[key] = value
+
             data_list.append(record)
 
         return data_list
+
+    def _read_json_file(self, json_path: Path) -> pd.DataFrame:
+        """Read JSON file and convert to DataFrame."""
+        import json
+        
+        self.logger.info(f"Reading JSON file: {json_path}")
+        
+        data_list = []
+        with open(json_path, 'r', encoding='utf-8') as f:
+            # Handle both formats: single JSON array or line-delimited JSON
+            content = f.read().strip()
+            
+            if content.startswith('['):
+                # JSON array format (list of dict) - Milvus bulk import format
+                data_list = json.loads(content)
+            elif content.startswith('{'):
+                # Check if it's legacy format with "rows" key or single object
+                data = json.loads(content)
+                if 'rows' in data and isinstance(data['rows'], list):
+                    # Legacy Milvus bulk import format: {"rows": [...]}
+                    data_list = data['rows']
+                else:
+                    # Single JSON object, treat as one record
+                    data_list = [data]
+            else:
+                # Line-delimited JSON format (JSONL)
+                f.seek(0)  # Reset file pointer
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        data_list.append(json.loads(line))
+        
+        if not data_list:
+            raise ValueError(f"No data found in JSON file: {json_path}")
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(data_list)
+        self.logger.info(f"Loaded {len(df)} rows from JSON file")
+        
+        return df
 
     def _convert_single_vector_data(self, vector_data: Any, field_type: str) -> Any:
         """Convert single vector data to appropriate format for Milvus insert."""

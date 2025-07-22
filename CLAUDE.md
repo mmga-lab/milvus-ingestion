@@ -104,7 +104,7 @@ milvus-fake-data upload --local-path ./output --s3-path s3://bucket/prefix/ --no
 milvus-fake-data upload --local-path ./output --s3-path s3://bucket/prefix/ --access-key-id KEY --secret-access-key SECRET  # With credentials
 
 # Send data to Milvus
-# Direct insert to Milvus (reads local files and creates collection)
+# Direct insert to Milvus (reads local parquet and JSON files and creates collection)
 milvus-fake-data to-milvus insert ./output                                # Insert to local Milvus
 milvus-fake-data to-milvus insert ./output --uri http://192.168.1.100:19530 --token your-token  # Remote Milvus with auth
 milvus-fake-data to-milvus insert ./output --drop-if-exists               # Drop existing collection and recreate
@@ -145,15 +145,15 @@ milvus-fake-data/
 - **cli.py**: Command-line interface with Click framework, supports generation, schema management, upload, and Milvus integration
 - **optimized_writer.py**: High-performance vectorized data generation using NumPy operations for large datasets
 - **generator.py**: Core data generation logic that wraps optimized_writer for compatibility
-- **models.py**: Pydantic models for schema validation with comprehensive error messages and field type definitions
+- **models.py**: Pydantic models for schema validation with comprehensive error messages and field type definitions, includes dynamic field support
 - **schema_manager.py**: Manages built-in and custom schemas, stores user schemas in ~/.milvus-fake-data/schemas
-- **builtin_schemas.py**: Built-in schema definitions with metadata (12 schemas: simple, ecommerce, documents, images, users, videos, news, audio_transcripts, ai_conversations, face_recognition, ecommerce_partitioned, cardinality_demo)
+- **builtin_schemas.py**: Built-in schema definitions with metadata (13 schemas: simple, ecommerce, documents, images, users, videos, news, audio_transcripts, ai_conversations, face_recognition, ecommerce_partitioned, cardinality_demo, dynamic_example)
 - **rich_display.py**: Rich terminal formatting and user interface components
 - **logging_config.py**: Structured logging with loguru
 - **exceptions.py**: Custom exception classes (MilvusFakeDataError, SchemaError, UnsupportedFieldTypeError, GenerationError)
 - **uploader.py**: S3/MinIO upload functionality with boto3, supports AWS S3 and S3-compatible storage
-- **milvus_inserter.py**: Direct insert to Milvus using PyMilvus client with automatic collection creation
-- **milvus_importer.py**: Bulk import using PyMilvus bulk_import API for pre-uploaded files
+- **milvus_inserter.py**: Direct insert to Milvus using PyMilvus client with automatic collection creation, supports both Parquet and JSON files
+- **milvus_importer.py**: Bulk import using PyMilvus bulk_import API for pre-uploaded files, supports both Parquet and JSON files
 
 ### High-Performance Data Flow
 1. Schema validation using Pydantic models (models.py)
@@ -161,12 +161,82 @@ milvus-fake-data/
 3. **Direct PyArrow integration** for efficient Parquet writing
 4. **Large batch processing** (50K+ rows per batch)
 5. **Automatic file partitioning** (256MB chunks, 1M rows/file by default)
-6. Output optimized for: Parquet (primary), JSON (fast serialization)
+6. **Multi-format support**: Parquet (binary, high-performance) and JSON (standard array format)
+7. **Dynamic field support**: Generate additional fields stored in `$meta` for flexible schemas
 
 ### Output Structure
 The tool always generates a directory (not a single file) containing:
-- One or more data files (automatically partitioned based on size/row limits)
+- One or more data files in Parquet or JSON format (automatically partitioned based on size/row limits)
 - `meta.json` file with collection metadata and generation details
+
+### Supported Data Formats
+- **Parquet** (default): High-performance binary format optimized for analytics workloads
+- **JSON**: Standard JSON array format `[{}, {}, {}...]` compatible with Milvus bulk import
+
+### JSON Format Details
+The tool generates JSON files in standard array format for maximum compatibility:
+
+```json
+[
+  {
+    "id": 1,
+    "name": "Product 1",
+    "price": 19.99,
+    "embedding": [0.1, 0.2, 0.3, ...],
+    "$meta": {
+      "dynamic_field1": "value1",
+      "dynamic_field2": 42
+    }
+  },
+  {
+    "id": 2,
+    "name": "Product 2", 
+    "price": 29.99,
+    "embedding": [0.4, 0.5, 0.6, ...],
+    "$meta": {
+      "dynamic_field1": "value2",
+      "dynamic_field3": true
+    }
+  }
+]
+```
+
+**JSON Format Features:**
+- **Standard Array**: Direct JSON array `[{}, {}...]` without wrapper objects
+- **Milvus Compatible**: Works with both direct insert and bulk import
+- **Dynamic Fields**: Supports `$meta` field for additional dynamic properties
+- **Multi-Format Read**: Insert/import commands auto-detect JSON vs Parquet files
+- **Flexible Structure**: Supports JSONL, single objects, and legacy formats for compatibility
+
+### Dynamic Field Support
+The tool supports Milvus dynamic fields through the `$meta` field:
+
+```json
+{
+  "collection_name": "dynamic_example",
+  "enable_dynamic_field": true,
+  "dynamic_fields": [
+    {
+      "name": "author",
+      "type": "String", 
+      "probability": 0.8,
+      "values": ["Alice", "Bob", "Charlie"]
+    },
+    {
+      "name": "views",
+      "type": "Int",
+      "probability": 0.9,
+      "min": 1,
+      "max": 10000
+    }
+  ],
+  "fields": [...]
+}
+```
+
+**Dynamic Field Types**: String, Int, Float, Bool, Array, JSON
+**Storage**: All dynamic fields are stored in the `$meta` field during generation
+**Import**: The `$meta` field is automatically unpacked during Milvus insertion
 
 ### Schema System
 The tool supports two types of schemas:
@@ -209,11 +279,19 @@ Uses Pydantic for comprehensive validation with helpful error messages. The vali
 
 ### Performance Benchmarks
 **Typical Performance (on modern hardware):**
+
+**Data Generation:**
 - **Small datasets** (<10K rows): 5,000-10,000 rows/sec
 - **Medium datasets** (10K-100K rows): 7,000-15,000 rows/sec  
 - **Large datasets** (100K+ rows): 10,000-25,000 rows/sec
 - **Vector-heavy schemas**: 5,000-15,000 rows/sec
 - **Text-heavy schemas**: 10,000-30,000 rows/sec
+
+**Format Performance:**
+- **Parquet**: Fastest generation and smallest file size, optimized for analytics
+- **JSON**: Slower generation but human-readable, good for debugging and compatibility
+- **File Size**: Parquet ~30-50% smaller than JSON for the same data
+- **Insert Performance**: Both formats have similar Milvus insertion speeds
 
 ### Testing Approach
 - pytest with coverage reporting
@@ -221,6 +299,61 @@ Uses Pydantic for comprehensive validation with helpful error messages. The vali
 - Tests cover validation, generation, CLI interface, and schema management
 - Integration tests for end-to-end workflows with 100K+ row datasets
 - Test fixtures in tests/conftest.py for common scenarios
+
+## JSON Format Usage Examples
+
+### Basic JSON Generation
+```bash
+# Generate simple JSON data
+milvus-fake-data generate --builtin simple --rows 1000 --format json --out json_data
+
+# Preview the JSON structure
+head -n 1 json_data/data.json | python -m json.tool
+```
+
+### Dynamic Fields with JSON
+```bash  
+# Generate data with dynamic fields
+milvus-fake-data generate --builtin dynamic_example --rows 500 --format json --out dynamic_data
+
+# The output will include $meta field with dynamic content:
+# {
+#   "title": "Product Title",
+#   "embedding": [...],
+#   "$meta": {
+#     "author": "John Doe", 
+#     "views": 1234,
+#     "rating": 4.5
+#   }
+# }
+```
+
+### Multi-Format Workflow
+```bash
+# Generate both formats for comparison
+milvus-fake-data generate --builtin ecommerce --rows 10000 --format parquet --out parquet_data
+milvus-fake-data generate --builtin ecommerce --rows 10000 --format json --out json_data
+
+# Both can be used interchangeably
+milvus-fake-data to-milvus insert ./parquet_data --collection-name parquet_collection
+milvus-fake-data to-milvus insert ./json_data --collection-name json_collection
+```
+
+### Advanced JSON Import
+```bash
+# Generate large JSON dataset with dynamic fields  
+milvus-fake-data generate --builtin dynamic_example --rows 100000 --format json --out large_json
+
+# Upload and import to Milvus with custom settings
+milvus-fake-data to-milvus import \
+  --local-path ./large_json \
+  --s3-path large-dataset/ \
+  --bucket production-bucket \
+  --endpoint-url http://minio:9000 \
+  --collection-name production_collection \
+  --wait \
+  --timeout 600
+```
 
 ## Common Development Workflows
 
@@ -387,10 +520,13 @@ milvus-fake-data to-milvus import --collection-name my_collection --local-path .
 
 ### Option 1: One-Step Import (Recommended for most users)
 ```bash
-# Generate data
+# Generate data (Parquet format - default)
 milvus-fake-data generate --builtin simple --rows 1000000 --out ./output
 
-# Upload and import in one step
+# Generate data (JSON format)
+milvus-fake-data generate --builtin simple --rows 1000000 --format json --out ./output
+
+# Upload and import in one step (supports both Parquet and JSON files)
 milvus-fake-data to-milvus import \
   --local-path ./output/ \
   --s3-path data/ \
@@ -401,10 +537,10 @@ milvus-fake-data to-milvus import \
 
 ### Option 2: Separate Upload and Import
 ```bash
-# Generate data
-milvus-fake-data generate --builtin simple --rows 1000000 --out ./output
+# Generate data with dynamic fields (JSON format recommended)
+milvus-fake-data generate --builtin dynamic_example --rows 100000 --format json --out ./output
 
-# Step 1: Upload to S3/MinIO
+# Step 1: Upload to S3/MinIO (supports mixed file types)
 milvus-fake-data upload ./output s3://my-bucket/data/ --endpoint-url http://minio:9000
 
 # Step 2: Import (for pre-uploaded files - would need separate import command)
@@ -413,10 +549,10 @@ milvus-fake-data upload ./output s3://my-bucket/data/ --endpoint-url http://mini
 
 ### Option 3: Direct Insert (No S3/MinIO)
 ```bash
-# Generate data
-milvus-fake-data generate --builtin simple --rows 100000 --out ./output
+# Generate data (auto-detects Parquet and JSON files)
+milvus-fake-data generate --builtin simple --rows 100000 --format json --out ./output
 
-# Direct insert to Milvus
+# Direct insert to Milvus (works with both file formats)
 milvus-fake-data to-milvus insert ./output --uri http://milvus:19530
 ```
 
@@ -431,11 +567,12 @@ milvus-fake-data to-milvus insert ./output --uri http://milvus:19530
    - **Most convenient for typical workflows**
 
 2. **Direct Insert (`to-milvus insert`)**:
-   - Reads data directly from local files
+   - Reads data directly from local Parquet and JSON files
    - Creates collection and inserts data in one operation
    - Suitable for smaller to medium datasets
    - Synchronous operation with progress bar
    - **No S3/MinIO required**
+   - **Multi-format support**: Auto-detects and processes both file types
 
 3. **Separate Upload (`upload`)**:
    - Standalone upload to S3/MinIO
