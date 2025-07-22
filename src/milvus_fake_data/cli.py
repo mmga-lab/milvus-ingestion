@@ -38,7 +38,6 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-from .generator import generate_mock_data
 from .logging_config import (
     get_logger,
     log_error_with_context,
@@ -629,7 +628,7 @@ def clean(yes: bool = False) -> None:
     help="Local path to data directory to upload",
 )
 @click.option(
-    "--s3-path", 
+    "--s3-path",
     required=True,
     type=str,
     help="S3 destination path (e.g., s3://bucket/prefix/)",
@@ -992,7 +991,7 @@ def import_to_milvus(
             )
 
         # Step 1: Upload data to S3/MinIO
-        print(f"Step 1: Uploading data to S3/MinIO...")
+        print("Step 1: Uploading data to S3/MinIO...")
         uploader = S3Uploader(
             endpoint_url=endpoint_url,
             access_key_id=access_key_id,
@@ -1009,7 +1008,7 @@ def import_to_milvus(
         print(f"✓ Data uploaded to {destination}")
 
         # Step 2: Import to Milvus
-        print(f"Step 2: Importing data to Milvus...")
+        print("Step 2: Importing data to Milvus...")
         importer = MilvusBulkImporter(uri=uri, token=token)
 
         # Get list of data files to import
@@ -1037,7 +1036,7 @@ def import_to_milvus(
         if wait:
             success = importer.wait_for_completion(job_id, timeout=timeout or 300)
             if success:
-                print(f"✓ Import completed successfully!")
+                print("✓ Import completed successfully!")
             else:
                 raise SystemExit(1)
         else:

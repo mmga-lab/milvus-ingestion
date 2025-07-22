@@ -374,10 +374,10 @@ def _generate_scalar_field_data(
             max_val = max_val if max_val is not None else 1000.0
 
             # Generate unique values
-            unique_values = np.random.uniform(min_val, max_val, size=num_unique)
+            unique_float_values = np.random.uniform(min_val, max_val, size=num_unique)
             # Repeat to fill all rows
             indices = np.random.randint(0, num_unique, size=num_rows)
-            result = unique_values[indices]
+            result = unique_float_values[indices]
             return result.astype(np.float32) if field_type == "Float" else result
 
         elif field_type in ["VarChar", "String"]:
@@ -385,7 +385,7 @@ def _generate_scalar_field_data(
             string_pool = [f"{field_name}_{i}" for i in range(num_unique)]
             indices = np.random.randint(0, len(string_pool), size=num_rows)
             string_array = np.array(string_pool)
-            return string_array[indices].tolist()
+            return list(string_array[indices])
 
     # Default generation (no cardinality specified)
     if field_type in ["Int8", "Int16", "Int32", "Int64"]:
@@ -398,7 +398,7 @@ def _generate_scalar_field_data(
         dtype, default_min, default_max = type_info[field_type]
         min_val = min_val if min_val is not None else default_min
         max_val = max_val if max_val is not None else default_max
-        return np.random.randint(min_val, max_val + 1, size=num_rows, dtype=dtype)
+        return np.random.randint(min_val, max_val + 1, size=num_rows).astype(dtype)
 
     elif field_type == "Float":
         min_val = min_val if min_val is not None else 0.0
@@ -418,7 +418,7 @@ def _generate_scalar_field_data(
         string_pool = [f"text_{i % 1000}" for i in range(1000)]
         indices = np.random.randint(0, len(string_pool), size=num_rows)
         string_array = np.array(string_pool)
-        return string_array[indices].tolist()
+        return list(string_array[indices])
 
     else:
         raise ValueError(f"Unsupported field type: {field_type}")

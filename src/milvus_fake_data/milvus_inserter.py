@@ -93,31 +93,36 @@ class MilvusInserter:
         final_collection_name = collection_name or metadata["schema"]["collection_name"]
 
         # Check if collection exists
-        if self.client.has_collection(final_collection_name):
+        collection_exists = self.client.has_collection(final_collection_name)
+
+        if collection_exists:
             if drop_if_exists:
                 self.client.drop_collection(final_collection_name)
                 self.logger.info(
                     f"Dropped existing collection: {final_collection_name}"
                 )
+                collection_exists = False
             else:
-                raise ValueError(
+                self.logger.info(
                     f"Collection '{final_collection_name}' already exists. "
-                    "Use --drop-if-exists to recreate it."
+                    "Skipping collection creation and will insert data into existing collection."
                 )
 
-        # Create collection schema
-        schema = self._create_schema(metadata)
+        # Create collection only if it doesn't exist
+        if not collection_exists:
+            # Create collection schema
+            schema = self._create_schema(metadata)
 
-        # Create index params
-        index_params = self._create_index_params(metadata)
+            # Create index params
+            index_params = self._create_index_params(metadata)
 
-        # Create collection
-        self.client.create_collection(
-            collection_name=final_collection_name,
-            schema=schema,
-            index_params=index_params,
-        )
-        self.logger.info(f"Created collection: {final_collection_name}")
+            # Create collection
+            self.client.create_collection(
+                collection_name=final_collection_name,
+                schema=schema,
+                index_params=index_params,
+            )
+            self.logger.info(f"Created collection: {final_collection_name}")
 
         # Find all parquet files
         parquet_files = sorted(data_path.glob("*.parquet"))
@@ -218,7 +223,7 @@ class MilvusInserter:
             "collection_loaded": True,
         }
 
-    def _create_schema(self, metadata: dict[str, Any]):
+    def _create_schema(self, metadata: dict[str, Any]) -> Any:
         """Create Milvus collection schema."""
         # Use MilvusClient's create_schema method
         schema = self.client.create_schema(enable_dynamic_field=True)
@@ -284,7 +289,7 @@ class MilvusInserter:
 
         return schema
 
-    def _create_index_params(self, metadata: dict[str, Any]):
+    def _create_index_params(self, metadata: dict[str, Any]) -> Any:
         """Create index parameters."""
         # Use MilvusClient's prepare_index_params method
         index_params = self.client.prepare_index_params()
@@ -528,7 +533,7 @@ class MilvusInserter:
         """Get the field type for a column from metadata."""
         for field_info in metadata["schema"]["fields"]:
             if field_info["name"] == column_name:
-                return field_info["type"]
+                return str(field_info["type"])
         return "unknown"
 
     def _is_auto_id_field(self, column_name: str, metadata: dict[str, Any]) -> bool:
@@ -538,7 +543,7 @@ class MilvusInserter:
                 return True
         return False
 
-    def close(self):
+    def close(self) -> None:
         """Close Milvus connection."""
         try:
             self.client.close()

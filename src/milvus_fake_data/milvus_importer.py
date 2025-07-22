@@ -9,6 +9,7 @@ from typing import Any
 
 from pymilvus import DataType, MilvusClient
 from pymilvus.bulk_writer import bulk_import, get_import_progress, list_import_jobs
+from rich.console import Console
 from rich.progress import (
     BarColumn,
     Progress,
@@ -40,6 +41,7 @@ class MilvusBulkImporter:
         self.token = token
         self.db_name = db_name
         self.logger = get_logger(__name__)
+        self.console = Console(stderr=True)
 
         # Initialize Milvus client for collection management
         try:
@@ -364,6 +366,7 @@ class MilvusBulkImporter:
                 BarColumn(),
                 TaskProgressColumn(),
                 transient=True,
+                console=self.console,
             ) as progress:
                 task = progress.add_task(
                     "Waiting for import completion...", total=timeout
@@ -385,6 +388,8 @@ class MilvusBulkImporter:
                     # Log detailed progress information
                     elapsed = time.time() - start_time
                     if int(elapsed) % 10 < 2:  # Log every 10 seconds
+                        # Stop the progress temporarily and print logs
+                        progress.stop()
                         self.logger.info(f"Import progress update for job {job_id}:")
                         self.logger.info(f"  State: {state}")
                         self.logger.info(f"  Progress: {progress_percent}%")
@@ -393,9 +398,13 @@ class MilvusBulkImporter:
                         )
                         self.logger.info(f"  File size processed: {file_size:,} bytes")
                         self.logger.info(f"  Elapsed time: {elapsed:.1f}s")
+                        # Resume progress bar
+                        progress.start()
 
                     if state == "ImportCompleted" or state == "Completed":
                         progress.update(task, completed=timeout)
+                        # Stop progress before final logs
+                        progress.stop()
                         self.logger.info("🎉 Bulk import completed successfully!")
                         self.logger.info(f"Job ID: {job_id}")
                         self.logger.info(f"Total rows imported: {imported_rows:,}")
@@ -407,6 +416,8 @@ class MilvusBulkImporter:
                         return True
                     elif state == "ImportFailed" or state == "Failed":
                         progress.update(task, completed=timeout)
+                        # Stop progress before error logs
+                        progress.stop()
                         reason = job_info.get("reason", "Unknown error")
                         self.logger.error("❌ Bulk import failed!")
                         self.logger.error(f"Job ID: {job_id}")
