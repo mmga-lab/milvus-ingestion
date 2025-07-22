@@ -72,8 +72,7 @@ class TestDataGeneration:
                 "generate", 
                 "--builtin", "simple",
                 "--rows", "50",
-                "--seed", "42",
-                "--yes"
+                "--seed", "42"
             ])
             
             assert result.exit_code == 0
@@ -106,8 +105,7 @@ class TestDataGeneration:
                 "--schema", str(schema_file),
                 "--rows", "25",
                 "--seed", "123",
-                "--out", "custom_output",
-                "--yes"
+                "--out", "custom_output"
             ])
             
             assert result.exit_code == 0
@@ -133,8 +131,7 @@ class TestDataGeneration:
                 "--schema", str(schema_file),
                 "--rows", "10",
                 "--format", "parquet",
-                "--out", "parquet_output",
-                "--yes"
+                "--out", "parquet_output"
             ])
             assert result.exit_code == 0
             
@@ -149,8 +146,7 @@ class TestDataGeneration:
                 "--schema", str(schema_file),
                 "--rows", "10",
                 "--format", "json",
-                "--out", "json_output",
-                "--yes"
+                "--out", "json_output"
             ])
             assert result.exit_code == 0
             
@@ -174,8 +170,7 @@ class TestDataGeneration:
                 "--rows", "15000",  # Should create multiple files
                 "--max-rows-per-file", "5000",
                 "--batch-size", "2500",
-                "--out", "large_output",
-                "--yes"
+                "--out", "large_output"
             ])
             
             assert result.exit_code == 0
@@ -204,8 +199,7 @@ class TestDataGeneration:
                 "--schema", str(schema_file),
                 "--rows", "20",
                 "--seed", "42",
-                "--out", "vector_output",
-                "--yes"
+                "--out", "vector_output"
             ])
             
             assert result.exit_code == 0
@@ -301,8 +295,7 @@ class TestSchemaManagement:
             result = cli_runner.invoke(main, [
                 "generate",
                 "--builtin", "my_test_custom", 
-                "--rows", "5",
-                "--yes"
+                "--rows", "5"
             ])
             assert result.exit_code == 0
             
@@ -335,8 +328,7 @@ class TestS3MinIOIntegration:
                 "generate",
                 "--schema", str(schema_file),
                 "--rows", "10",
-                "--out", "test_data",
-                "--yes"
+                "--out", "test_data"
             ])
             assert result.exit_code == 0
             
@@ -386,8 +378,7 @@ class TestMilvusIntegration:
                 "generate",
                 "--schema", str(schema_file),
                 "--rows", "20",
-                "--out", "milvus_data",
-                "--yes"
+                "--out", "milvus_data"
             ])
             assert result.exit_code == 0
             
@@ -541,8 +532,7 @@ class TestPerformanceOptions:
                 "--schema", str(schema_file),
                 "--rows", "1000",
                 "--batch-size", "250",
-                "--out", "batch_test",
-                "--yes"
+                "--out", "batch_test"
             ])
             
             assert result.exit_code == 0
@@ -560,8 +550,7 @@ class TestPerformanceOptions:
                 "--rows", "5000",
                 "--max-file-size", "1",  # 1MB limit
                 "--max-rows-per-file", "1000",
-                "--out", "size_test",
-                "--yes"
+                "--out", "size_test"
             ])
             
             assert result.exit_code == 0
@@ -626,7 +615,6 @@ class TestFullWorkflow:
                 "--batch-size", "500",
                 "--max-rows-per-file", "1000",
                 "--seed", "42",
-                "--yes"
             ])
             assert result.exit_code == 0
             
@@ -652,7 +640,6 @@ class TestFullWorkflow:
                 "--format", "json", 
                 "--out", "complete_json",
                 "--seed", "42",
-                "--yes"
             ])
             assert result.exit_code == 0
             

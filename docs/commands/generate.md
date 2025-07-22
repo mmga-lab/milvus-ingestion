@@ -170,13 +170,6 @@ milvus-fake-data generate --builtin ecommerce --rows 100000 --seed 123 --out ./r
 milvus-fake-data generate --builtin simple --rows 100000 --no-progress
 ```
 
-### --yes
-自动确认所有提示
-
-```bash
-# 脚本自动化，跳过确认提示
-milvus-fake-data generate --builtin simple --rows 100000 --out ./data --yes
-```
 
 ### --force
 强制覆盖现有输出目录
@@ -236,8 +229,7 @@ for schema in simple ecommerce documents users; do
     --builtin $schema \
     --rows 100000 \
     --out ./datasets/$schema \
-    --seed 42 \
-    --yes
+    --seed 42
 done
 ```
 

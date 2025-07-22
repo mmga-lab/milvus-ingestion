@@ -289,7 +289,6 @@ milvus-fake-data clean [options]     # Utility commands
 | `--batch-size INTEGER` | Batch size for memory efficiency (default: 50000) | `milvus-fake-data generate --batch-size 100000` |
 | `--max-file-size INTEGER` | Maximum size per file in MB (default: 256) | `milvus-fake-data generate --max-file-size 100` |
 | `--max-rows-per-file INTEGER` | Maximum rows per file (default: 1000000) | `milvus-fake-data generate --max-rows-per-file 500000` |
-| `--yes` | Auto-confirm prompts | `milvus-fake-data generate --yes` |
 | `--force` | Force overwrite output directory | `milvus-fake-data generate --force` |
 
 ### Schema Management Commands

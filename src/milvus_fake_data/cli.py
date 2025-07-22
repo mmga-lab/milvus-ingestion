@@ -48,7 +48,6 @@ from .logging_config import (
 from .milvus_inserter import MilvusInserter
 from .models import get_schema_help, validate_schema_data
 from .rich_display import (
-    display_confirmation_prompt,
     display_error,
     display_schema_details,
     display_schema_list,
@@ -150,12 +149,6 @@ def main(ctx: click.Context, verbose: bool = False) -> None:
     help="Number of rows to generate and process in each batch (larger batches = better performance).",
 )
 @click.option(
-    "--yes",
-    "-y",
-    is_flag=True,
-    help="Auto-confirm all prompts and proceed without interactive confirmation.",
-)
-@click.option(
     "--force",
     is_flag=True,
     help="Force overwrite output directory if it exists.",
@@ -189,7 +182,6 @@ def generate(
     validate_only: bool = False,
     no_progress: bool = False,
     batch_size: int = 50000,
-    yes: bool = False,
     force: bool = False,
     max_file_size_mb: int = 256,
     max_rows_per_file: int = 1000000,
@@ -381,24 +373,10 @@ def generate(
             generation_config=generation_config,
         )
 
-        # Add confirmation prompt (unless auto-confirmed with --yes or in preview mode)
-        if not yes and not preview:
-            # Calculate estimated size for confirmation display
-            from .rich_display import _estimate_output_size
+        # Return early if this is just a preview
+        if preview:
+            return
 
-            estimated_size = _estimate_output_size(fields, rows)
-
-            # Display formatted confirmation prompt
-            display_confirmation_prompt(rows, estimated_size)
-            # Simple yes/no prompt
-            if not click.confirm("Proceed with data generation?", default=True):
-                logger.info("Data generation cancelled by user")
-                click.echo("❌ Operation cancelled.")
-                return
-            else:
-                logger.info("Data generation confirmed by user")
-        else:
-            logger.info("Data generation auto-confirmed with --yes flag")
     except Exception as e:
         logger.error("Failed to load or validate schema for preview", error=str(e))
         click.echo(f"✗ Error loading schema: {e}", err=True)
@@ -485,14 +463,6 @@ def generate(
             },
         )
         raise
-
-    if preview:
-        # For preview, generate a small sample
-        preview_df = generate_mock_data(
-            schema_path, rows=min(5, rows), seed=seed, show_progress=False
-        )
-        click.echo("\nPreview (top 5 rows):")
-        click.echo(preview_df.head())
 
 
 @main.group()
