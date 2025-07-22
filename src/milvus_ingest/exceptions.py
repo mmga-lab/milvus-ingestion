@@ -1,31 +1,31 @@
-"""Custom exceptions for milvus-fake-data."""
+"""Custom exceptions for milvus-ingest."""
 
 
-class MilvusFakeDataError(Exception):
-    """Base exception for milvus-fake-data."""
+class MilvusIngestError(Exception):
+    """Base exception for milvus-ingest."""
 
     pass
 
 
-class SchemaError(MilvusFakeDataError):
+class SchemaError(MilvusIngestError):
     """Raised when there's an issue with the schema format or content."""
 
     pass
 
 
-class UnsupportedFieldTypeError(MilvusFakeDataError):
+class UnsupportedFieldTypeError(MilvusIngestError):
     """Raised when an unsupported field type is encountered."""
 
     pass
 
 
-class GenerationError(MilvusFakeDataError):
+class GenerationError(MilvusIngestError):
     """Raised when there's an error during data generation."""
 
     pass
 
 
-class PrimaryKeyException(MilvusFakeDataError):
+class PrimaryKeyException(MilvusIngestError):
     """Raised when there's an issue with primary key configuration."""
 
     pass

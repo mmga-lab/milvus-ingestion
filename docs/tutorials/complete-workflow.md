@@ -34,8 +34,8 @@ graph LR
 
 ```bash
 # 项目克隆和初始化
-git clone https://github.com/zilliz/milvus-fake-data.git
-cd milvus-fake-data
+git clone https://github.com/zilliz/milvus-ingest.git
+cd milvus-ingest
 pdm install
 
 # 启动本地测试环境
@@ -174,26 +174,26 @@ EOF
 
 ```bash
 # 验证模式格式
-milvus-fake-data generate --schema schemas/knowledge_base.json --validate-only
+milvus-ingest generate --schema schemas/knowledge_base.json --validate-only
 
 # 预览数据结构
-milvus-fake-data generate --schema schemas/knowledge_base.json --rows 10 --preview
+milvus-ingest generate --schema schemas/knowledge_base.json --rows 10 --preview
 
 # 查看详细字段信息
-milvus-fake-data schema help --field-type Array
-milvus-fake-data schema help --field-type JSON
+milvus-ingest schema help --field-type Array
+milvus-ingest schema help --field-type JSON
 ```
 
 ### 2.4 注册模式
 
 ```bash
 # 将模式添加到管理库
-milvus-fake-data schema add knowledge_base schemas/knowledge_base.json \
+milvus-ingest schema add knowledge_base schemas/knowledge_base.json \
   --description "智能客服知识库模式" \
   --tags "客服,FAQ,语义搜索,多语言"
 
 # 验证注册成功
-milvus-fake-data schema show knowledge_base
+milvus-ingest schema show knowledge_base
 ```
 
 ## 🔬 阶段三：数据生成与验证
@@ -202,7 +202,7 @@ milvus-fake-data schema show knowledge_base
 
 ```bash
 # 生成小样本数据进行验证
-milvus-fake-data generate \
+milvus-ingest generate \
   --builtin knowledge_base \
   --rows 1000 \
   --out data/kb_sample \
@@ -316,7 +316,7 @@ python scripts/validate_data.py data/kb_sample
 
 ```bash
 # 生成中等规模数据进行性能测试
-milvus-fake-data generate \
+milvus-ingest generate \
   --builtin knowledge_base \
   --rows 50000 \
   --batch-size 10000 \
@@ -355,14 +355,14 @@ source configs/storage.env
 
 ```bash
 # 上传测试数据
-milvus-fake-data upload data/kb_sample \
+milvus-ingest upload data/kb_sample \
   s3://$MINIO_BUCKET/knowledge-base/v1.0/sample/ \
   --endpoint-url $MINIO_ENDPOINT \
   --access-key-id $MINIO_ACCESS_KEY \
   --secret-access-key $MINIO_SECRET_KEY
 
 # 上传中等规模数据
-milvus-fake-data upload data/kb_medium \
+milvus-ingest upload data/kb_medium \
   s3://$MINIO_BUCKET/knowledge-base/v1.0/medium/ \
   --endpoint-url $MINIO_ENDPOINT \
   --access-key-id $MINIO_ACCESS_KEY \
@@ -383,7 +383,7 @@ curl -X GET "$MINIO_ENDPOINT/$MINIO_BUCKET/knowledge-base/v1.0/sample/" \
 
 ```bash
 # 直接插入小规模数据进行连接测试
-milvus-fake-data to-milvus insert data/kb_sample \
+milvus-ingest to-milvus insert data/kb_sample \
   --uri $MILVUS_URI \
   --collection-name knowledge_base_test \
   --batch-size 1000
@@ -401,7 +401,7 @@ curl -X POST "$MILVUS_URI/v1/vector/collections/knowledge_base_test/query" \
 
 ```bash
 # 批量导入中等规模数据
-milvus-fake-data to-milvus import \
+milvus-ingest to-milvus import \
   --local-path data/kb_medium \
   --s3-path knowledge-base/v1.0/medium/ \
   --bucket $MINIO_BUCKET \
@@ -513,7 +513,7 @@ python scripts/verify_import.py $MILVUS_URI knowledge_base_staging 50000
 
 ```bash
 # 生成大规模数据集用于性能测试
-milvus-fake-data generate \
+milvus-ingest generate \
   --builtin knowledge_base \
   --rows 1000000 \
   --batch-size 50000 \
@@ -530,14 +530,14 @@ python scripts/validate_data.py data/kb_large
 
 ```bash
 # 上传大规模数据
-milvus-fake-data upload data/kb_large \
+milvus-ingest upload data/kb_large \
   s3://$MINIO_BUCKET/knowledge-base/v1.0/large/ \
   --endpoint-url $MINIO_ENDPOINT \
   --access-key-id $MINIO_ACCESS_KEY \
   --secret-access-key $MINIO_SECRET_KEY
 
 # 高性能批量导入
-time milvus-fake-data to-milvus import \
+time milvus-ingest to-milvus import \
   --local-path data/kb_large \
   --s3-path knowledge-base/v1.0/large/ \
   --bucket $MINIO_BUCKET \
@@ -741,7 +741,7 @@ deploy_to_production() {
     
     # 上传数据到生产存储
     log_info "上传数据到生产存储..."
-    milvus-fake-data upload data/kb_large \
+    milvus-ingest upload data/kb_large \
         s3://$PROD_S3_BUCKET/knowledge-base/$(date +%Y%m%d_%H%M%S)/ \
         --endpoint-url $PROD_S3_ENDPOINT \
         --access-key-id $PROD_S3_ACCESS_KEY \
@@ -750,7 +750,7 @@ deploy_to_production() {
     
     # 导入到生产 Milvus
     log_info "导入数据到生产 Milvus..."
-    milvus-fake-data to-milvus import \
+    milvus-ingest to-milvus import \
         --local-path data/kb_large \
         --s3-path knowledge-base/$(date +%Y%m%d_%H%M%S)/ \
         --bucket $PROD_S3_BUCKET \
@@ -1017,7 +1017,7 @@ log_info() {
 log_info "开始增量数据更新..."
 
 # 生成新的数据（模拟增量）
-milvus-fake-data generate \
+milvus-ingest generate \
     --builtin knowledge_base \
     --rows 100000 \
     --out data/kb_incremental_$(date +%Y%m%d) \
@@ -1025,7 +1025,7 @@ milvus-fake-data generate \
 
 # 上传增量数据
 log_info "上传增量数据..."
-milvus-fake-data upload data/kb_incremental_$(date +%Y%m%d) \
+milvus-ingest upload data/kb_incremental_$(date +%Y%m%d) \
     s3://$PROD_S3_BUCKET/knowledge-base/incremental/$(date +%Y%m%d)/ \
     --endpoint-url $PROD_S3_ENDPOINT \
     --access-key-id $PROD_S3_ACCESS_KEY \
@@ -1036,7 +1036,7 @@ NEW_COLLECTION="${COLLECTION_NAME}_$(date +%Y%m%d)"
 
 # 导入增量数据到新集合
 log_info "导入到新集合: $NEW_COLLECTION"
-milvus-fake-data to-milvus import \
+milvus-ingest to-milvus import \
     --local-path data/kb_incremental_$(date +%Y%m%d) \
     --s3-path knowledge-base/incremental/$(date +%Y%m%d)/ \
     --bucket $PROD_S3_BUCKET \

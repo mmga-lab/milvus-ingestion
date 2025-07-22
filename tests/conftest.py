@@ -1,4 +1,4 @@
-"""Pytest configuration and shared fixtures for milvus-fake-data tests.
+"""Pytest configuration and shared fixtures for milvus-ingest tests.
 
 This file provides common test fixtures and configuration for the comprehensive
 end-to-end test suite.
@@ -43,16 +43,20 @@ def temp_dir():
 
 
 @pytest.fixture
-def mock_env_vars(monkeypatch):
-    """Set up mock environment variables for testing."""
+def mock_env_vars(monkeypatch, request):
+    """Set up environment variables for testing."""
+    # Get configuration from pytest options or use defaults
+    config = request.config
+    
     test_env = {
-        "MILVUS_URI": "http://127.0.0.1:19530",
-        "MINIO_HOST": "127.0.0.1",
-        "MINIO_ACCESS_KEY": "minioadmin",
-        "MINIO_SECRET_KEY": "minioadmin",
-        "MINIO_BUCKET": "a-bucket",
-        "AWS_ACCESS_KEY_ID": "test-access-key",
-        "AWS_SECRET_ACCESS_KEY": "test-secret-key",
+        "MILVUS_URI": getattr(config.option, "uri", "http://localhost:19530"),
+        "MILVUS_TOKEN": getattr(config.option, "token", ""),
+        "MINIO_HOST": getattr(config.option, "minio_host", "localhost"),
+        "MINIO_ACCESS_KEY": getattr(config.option, "minio_ak", "minioadmin"),
+        "MINIO_SECRET_KEY": getattr(config.option, "minio_sk", "minioadmin"),
+        "MINIO_BUCKET": getattr(config.option, "minio_bucket", "a-bucket"),
+        "AWS_ACCESS_KEY_ID": getattr(config.option, "minio_ak", "minioadmin"),
+        "AWS_SECRET_ACCESS_KEY": getattr(config.option, "minio_sk", "minioadmin"),
     }
 
     for key, value in test_env.items():
@@ -239,6 +243,16 @@ def default_values_schema() -> dict[str, Any]:
 
 
 # Pytest configuration
+def pytest_addoption(parser):
+    """Add custom command line options."""
+    parser.addoption("--uri", action="store", default="http://localhost:19530", help="Milvus URI")
+    parser.addoption("--token", action="store", default="", help="Milvus token")
+    parser.addoption("--minio-host", action="store", default="localhost", help="MinIO host")
+    parser.addoption("--minio-ak", action="store", default="minioadmin", help="MinIO access key")
+    parser.addoption("--minio-sk", action="store", default="minioadmin", help="MinIO secret key")
+    parser.addoption("--minio-bucket", action="store", default="a-bucket", help="MinIO bucket name")
+
+
 def pytest_configure(config):
     """Configure pytest with custom markers."""
     config.addinivalue_line(

@@ -1,4 +1,4 @@
-"""Logging configuration for milvus-fake-data using loguru.
+"""Logging configuration for milvus-ingest using loguru.
 
 This module provides a centralized logging configuration following best practices:
 - Structured logging with context
@@ -16,7 +16,7 @@ from typing import Any
 from loguru import logger
 
 # Default log directory
-DEFAULT_LOG_DIR = Path.home() / ".milvus-fake-data" / "logs"
+DEFAULT_LOG_DIR = Path.home() / ".milvus-ingest" / "logs"
 
 # Log format for different environments
 VERBOSE_FORMAT = (
@@ -74,7 +74,7 @@ def setup_logging(
     if enable_file_logging:
         if log_file is None:
             DEFAULT_LOG_DIR.mkdir(parents=True, exist_ok=True)
-            log_file = DEFAULT_LOG_DIR / "milvus-fake-data.log"
+            log_file = DEFAULT_LOG_DIR / "milvus-ingest.log"
 
         log_file = Path(log_file)
         log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -94,7 +94,7 @@ def setup_logging(
     # Add context enricher
     logger.configure(
         extra={
-            "component": "milvus-fake-data",
+            "component": "milvus-ingest",
             "version": "0.1.0",
         }
     )

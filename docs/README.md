@@ -1,6 +1,6 @@
 # Milvus Fake Data - 命令行工具文档
 
-这是 milvus-fake-data 命令行工具的完整使用文档，涵盖所有命令和选项的详细说明。
+这是 milvus-ingest 命令行工具的完整使用文档，涵盖所有命令和选项的详细说明。
 
 ## 📚 文档目录
 
@@ -27,29 +27,29 @@
 
 ```bash
 # 快速生成数据预览
-milvus-fake-data generate --builtin simple --rows 1000 --preview
+milvus-ingest generate --builtin simple --rows 1000 --preview
 
 # 生成大规模数据集（Parquet格式）
-milvus-fake-data generate --builtin ecommerce --rows 1000000 --out ./data
+milvus-ingest generate --builtin ecommerce --rows 1000000 --out ./data
 
 # 生成JSON格式数据（便于调试）
-milvus-fake-data generate --builtin simple --rows 10000 --format json --out ./json_data
+milvus-ingest generate --builtin simple --rows 10000 --format json --out ./json_data
 
 # 生成带动态字段的数据
-milvus-fake-data generate --builtin dynamic_example --rows 5000 --format json --out ./dynamic_data
+milvus-ingest generate --builtin dynamic_example --rows 5000 --format json --out ./dynamic_data
 
 # 查看所有可用模式
-milvus-fake-data schema list
+milvus-ingest schema list
 
 # 直接导入到 Milvus（支持Parquet和JSON）
-milvus-fake-data to-milvus insert ./data
-milvus-fake-data to-milvus insert ./json_data
+milvus-ingest to-milvus insert ./data
+milvus-ingest to-milvus insert ./json_data
 ```
 
 ### 命令结构
 
 ```
-milvus-fake-data <COMMAND> [OPTIONS]
+milvus-ingest <COMMAND> [OPTIONS]
 
 主要命令组：
   generate     数据生成
@@ -65,7 +65,7 @@ milvus-fake-data <COMMAND> [OPTIONS]
 使用预定义的数据模式，适合快速开始和测试：
 
 ```bash
-milvus-fake-data generate --builtin simple --rows 10000
+milvus-ingest generate --builtin simple --rows 10000
 ```
 
 **可用的内置模式：**
@@ -83,7 +83,7 @@ milvus-fake-data generate --builtin simple --rows 10000
 使用 JSON/YAML 文件定义自己的数据结构：
 
 ```bash
-milvus-fake-data generate --schema my_schema.json --rows 10000
+milvus-ingest generate --schema my_schema.json --rows 10000
 ```
 
 ### 3. 模式管理
@@ -91,10 +91,10 @@ milvus-fake-data generate --schema my_schema.json --rows 10000
 
 ```bash
 # 添加自定义模式
-milvus-fake-data schema add my_products schema.json
+milvus-ingest schema add my_products schema.json
 
 # 像内置模式一样使用
-milvus-fake-data generate --builtin my_products --rows 10000
+milvus-ingest generate --builtin my_products --rows 10000
 ```
 
 ## 🔧 高级功能
@@ -142,9 +142,9 @@ milvus-fake-data generate --builtin my_products --rows 10000
 
 ## 🆘 获取帮助
 
-- 查看具体命令帮助: `milvus-fake-data <command> --help`
-- 模式格式帮助: `milvus-fake-data schema help`
-- 问题反馈: [GitHub Issues](https://github.com/zilliz/milvus-fake-data/issues)
+- 查看具体命令帮助: `milvus-ingest <command> --help`
+- 模式格式帮助: `milvus-ingest schema help`
+- 问题反馈: [GitHub Issues](https://github.com/zilliz/milvus-ingest/issues)
 
 ---
 

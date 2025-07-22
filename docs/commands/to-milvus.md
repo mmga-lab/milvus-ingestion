@@ -5,7 +5,7 @@
 ## 基本语法
 
 ```bash
-milvus-fake-data to-milvus <SUBCOMMAND> [OPTIONS]
+milvus-ingest to-milvus <SUBCOMMAND> [OPTIONS]
 ```
 
 ## 子命令总览
@@ -23,7 +23,7 @@ milvus-fake-data to-milvus <SUBCOMMAND> [OPTIONS]
 
 ### 语法
 ```bash
-milvus-fake-data to-milvus insert DATA_PATH [OPTIONS]
+milvus-ingest to-milvus insert DATA_PATH [OPTIONS]
 ```
 
 ### 必需参数
@@ -36,13 +36,13 @@ Milvus 服务器地址（默认: http://localhost:19530）
 
 ```bash
 # 本地 Milvus
-milvus-fake-data to-milvus insert ./data --uri http://localhost:19530
+milvus-ingest to-milvus insert ./data --uri http://localhost:19530
 
 # 远程 Milvus
-milvus-fake-data to-milvus insert ./data --uri http://192.168.1.100:19530
+milvus-ingest to-milvus insert ./data --uri http://192.168.1.100:19530
 
 # Milvus Cloud
-milvus-fake-data to-milvus insert ./data --uri https://your-cluster.vectordb.zillizcloud.com
+milvus-ingest to-milvus insert ./data --uri https://your-cluster.vectordb.zillizcloud.com
 ```
 
 #### --token TOKEN
@@ -50,7 +50,7 @@ milvus-fake-data to-milvus insert ./data --uri https://your-cluster.vectordb.zil
 
 ```bash
 # 使用认证令牌
-milvus-fake-data to-milvus insert ./data \
+milvus-ingest to-milvus insert ./data \
   --uri https://your-cluster.vectordb.zillizcloud.com \
   --token your_api_token
 ```
@@ -60,7 +60,7 @@ milvus-fake-data to-milvus insert ./data \
 
 ```bash
 # 指定数据库
-milvus-fake-data to-milvus insert ./data \
+milvus-ingest to-milvus insert ./data \
   --uri http://milvus:19530 \
   --db-name production
 ```
@@ -72,7 +72,7 @@ milvus-fake-data to-milvus insert ./data \
 
 ```bash
 # 自定义集合名称
-milvus-fake-data to-milvus insert ./ecommerce_data \
+milvus-ingest to-milvus insert ./ecommerce_data \
   --collection-name product_vectors_v2
 ```
 
@@ -81,7 +81,7 @@ milvus-fake-data to-milvus insert ./ecommerce_data \
 
 ```bash
 # 强制重建集合
-milvus-fake-data to-milvus insert ./data \
+milvus-ingest to-milvus insert ./data \
   --collection-name test_collection \
   --drop-if-exists
 ```
@@ -93,10 +93,10 @@ milvus-fake-data to-milvus insert ./data \
 
 ```bash
 # 小批次（内存受限环境）
-milvus-fake-data to-milvus insert ./data --batch-size 500
+milvus-ingest to-milvus insert ./data --batch-size 500
 
 # 大批次（高性能环境）
-milvus-fake-data to-milvus insert ./data --batch-size 5000
+milvus-ingest to-milvus insert ./data --batch-size 5000
 ```
 
 ### 完整示例
@@ -104,20 +104,20 @@ milvus-fake-data to-milvus insert ./data --batch-size 5000
 #### 1. 基础本地插入
 ```bash
 # 生成Parquet格式数据
-milvus-fake-data generate --builtin simple --rows 10000 --out ./simple_data
+milvus-ingest generate --builtin simple --rows 10000 --out ./simple_data
 
 # 生成JSON格式数据
-milvus-fake-data generate --builtin simple --rows 10000 --format json --out ./simple_json
+milvus-ingest generate --builtin simple --rows 10000 --format json --out ./simple_json
 
 # 插入到本地 Milvus (自动检测文件格式)
-milvus-fake-data to-milvus insert ./simple_data
-milvus-fake-data to-milvus insert ./simple_json
+milvus-ingest to-milvus insert ./simple_data
+milvus-ingest to-milvus insert ./simple_json
 ```
 
 #### 2. 远程 Milvus 插入
 ```bash
 # 插入到远程 Milvus
-milvus-fake-data to-milvus insert ./ecommerce_data \
+milvus-ingest to-milvus insert ./ecommerce_data \
   --uri http://192.168.1.100:19530 \
   --collection-name products \
   --batch-size 2000
@@ -126,7 +126,7 @@ milvus-fake-data to-milvus insert ./ecommerce_data \
 #### 3. Milvus Cloud 插入
 ```bash
 # 插入到 Milvus Cloud
-milvus-fake-data to-milvus insert ./user_data \
+milvus-ingest to-milvus insert ./user_data \
   --uri https://your-cluster.vectordb.zillizcloud.com \
   --token your_api_token \
   --db-name production \
@@ -136,7 +136,7 @@ milvus-fake-data to-milvus insert ./user_data \
 #### 4. 开发测试流程
 ```bash
 # 开发测试：重复插入相同数据
-milvus-fake-data to-milvus insert ./test_data \
+milvus-ingest to-milvus insert ./test_data \
   --collection-name test_collection \
   --drop-if-exists \
   --batch-size 1000
@@ -150,7 +150,7 @@ milvus-fake-data to-milvus insert ./test_data \
 
 ### 语法
 ```bash
-milvus-fake-data to-milvus import [OPTIONS]
+milvus-ingest to-milvus import [OPTIONS]
 ```
 
 ### 数据源选项
@@ -164,7 +164,7 @@ milvus-fake-data to-milvus import [OPTIONS]
 
 ```bash
 # 自动上传并导入
-milvus-fake-data to-milvus import \
+milvus-ingest to-milvus import \
   --local-path ./ecommerce_data \
   --s3-path datasets/ecommerce/ \
   --bucket milvus-data \
@@ -176,7 +176,7 @@ milvus-fake-data to-milvus import \
 
 ```bash
 # 从已上传的数据导入
-milvus-fake-data to-milvus import \
+milvus-ingest to-milvus import \
   --files s3://bucket/data/file1.parquet \
   --files s3://bucket/data/file2.parquet \
   --collection-name my_collection
@@ -203,7 +203,7 @@ S3 访问凭证
 
 ```bash
 # 指定凭证
-milvus-fake-data to-milvus import \
+milvus-ingest to-milvus import \
   --local-path ./data \
   --s3-path collections/test/ \
   --bucket test-bucket \
@@ -219,7 +219,7 @@ milvus-fake-data to-milvus import \
 
 ```bash
 # 自定义集合名称
-milvus-fake-data to-milvus import \
+milvus-ingest to-milvus import \
   --local-path ./data \
   --s3-path datasets/products/ \
   --bucket milvus-data \
@@ -231,7 +231,7 @@ milvus-fake-data to-milvus import \
 
 ```bash
 # 强制重建集合
-milvus-fake-data to-milvus import \
+milvus-ingest to-milvus import \
   --local-path ./data \
   --s3-path datasets/test/ \
   --bucket test-bucket \
@@ -246,7 +246,7 @@ milvus-fake-data to-milvus import \
 
 ```bash
 # 等待导入完成
-milvus-fake-data to-milvus import \
+milvus-ingest to-milvus import \
   --local-path ./large_dataset \
   --s3-path datasets/large/ \
   --bucket production-data \
@@ -258,7 +258,7 @@ milvus-fake-data to-milvus import \
 
 ```bash
 # 设置更长的超时时间
-milvus-fake-data to-milvus import \
+milvus-ingest to-milvus import \
   --local-path ./huge_dataset \
   --s3-path datasets/huge/ \
   --bucket production-data \
@@ -271,13 +271,13 @@ milvus-fake-data to-milvus import \
 #### 1. 一步式导入（推荐）
 ```bash
 # 生成Parquet格式数据（默认）
-milvus-fake-data generate --builtin ecommerce --rows 1000000 --out ./ecommerce
+milvus-ingest generate --builtin ecommerce --rows 1000000 --out ./ecommerce
 
 # 生成JSON格式数据（与Milvus bulk import兼容）
-milvus-fake-data generate --builtin ecommerce --rows 1000000 --format json --out ./ecommerce_json
+milvus-ingest generate --builtin ecommerce --rows 1000000 --format json --out ./ecommerce_json
 
 # 自动上传并导入（支持两种格式）
-milvus-fake-data to-milvus import \
+milvus-ingest to-milvus import \
   --local-path ./ecommerce \
   --s3-path datasets/ecommerce/ \
   --bucket milvus-data \
@@ -290,16 +290,16 @@ milvus-fake-data to-milvus import \
 #### 2. 分步式导入
 ```bash
 # 步骤1: 生成数据
-milvus-fake-data generate --builtin documents --rows 2000000 --out ./documents
+milvus-ingest generate --builtin documents --rows 2000000 --out ./documents
 
 # 步骤2: 上传数据
-milvus-fake-data upload ./documents s3://milvus-data/documents/ \
+milvus-ingest upload ./documents s3://milvus-data/documents/ \
   --endpoint-url http://minio:9000 \
   --access-key-id minioadmin \
   --secret-access-key minioadmin
 
 # 步骤3: 导入数据
-milvus-fake-data to-milvus import \
+milvus-ingest to-milvus import \
   --files s3://milvus-data/documents/data.parquet \
   --collection-name document_search \
   --wait \
@@ -309,7 +309,7 @@ milvus-fake-data to-milvus import \
 #### 3. 生产环境大规模导入
 ```bash
 # 生成大规模数据集
-milvus-fake-data generate \
+milvus-ingest generate \
   --builtin ecommerce \
   --rows 10000000 \
   --max-file-size 512 \
@@ -317,7 +317,7 @@ milvus-fake-data generate \
   --out ./big_ecommerce
 
 # 高性能导入
-milvus-fake-data to-milvus import \
+milvus-ingest to-milvus import \
   --local-path ./big_ecommerce \
   --s3-path production/ecommerce_v3/ \
   --bucket production-milvus-data \
@@ -494,7 +494,7 @@ curl http://localhost:19530/healthz
 ### 1. 数据准备
 ```bash
 # 使用合适的文件分割
-milvus-fake-data generate \
+milvus-ingest generate \
   --builtin ecommerce \
   --rows 5000000 \
   --max-file-size 256 \
@@ -521,7 +521,7 @@ export MINIO_ACCESS_KEY=prod_access_key
 export MINIO_SECRET_KEY=prod_secret_key
 
 # 简化命令
-milvus-fake-data to-milvus import \
+milvus-ingest to-milvus import \
   --local-path ./data \
   --s3-path collections/$(date +%Y%m%d)/ \
   --bucket production-data \
@@ -535,7 +535,7 @@ milvus-fake-data to-milvus import \
 export LOGURU_LEVEL=INFO
 
 # 记录操作日志
-milvus-fake-data to-milvus insert ./data 2>&1 | tee import.log
+milvus-ingest to-milvus insert ./data 2>&1 | tee import.log
 ```
 
 ## 相关命令

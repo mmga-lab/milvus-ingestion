@@ -145,11 +145,11 @@ def display_schema_details(
     usage_text.append("Usage: ", style="bold")
     if is_builtin:
         usage_text.append(
-            f"milvus-fake-data --builtin {schema_id} --rows 1000", style="code"
+            f"milvus-ingest --builtin {schema_id} --rows 1000", style="code"
         )
     else:
         usage_text.append(
-            f"milvus-fake-data --builtin {schema_id} --rows 1000", style="code"
+            f"milvus-ingest --builtin {schema_id} --rows 1000", style="code"
         )
 
     console.print(

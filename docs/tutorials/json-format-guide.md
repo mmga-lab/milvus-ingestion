@@ -1,10 +1,10 @@
 # JSON格式和动态字段使用指南
 
-本指南详细介绍如何使用 milvus-fake-data 的 JSON 格式支持和动态字段功能。
+本指南详细介绍如何使用 milvus-ingest 的 JSON 格式支持和动态字段功能。
 
 ## 📚 JSON格式概述
 
-milvus-fake-data 支持两种数据格式：
+milvus-ingest 支持两种数据格式：
 
 - **Parquet**: 高性能二进制格式，适合大规模数据生成和分析
 - **JSON**: 标准JSON数组格式，易读易调试，与Milvus bulk import完全兼容
@@ -57,7 +57,7 @@ milvus-fake-data 支持两种数据格式：
 ### 生成JSON数据
 ```bash
 # 生成简单JSON数据
-milvus-fake-data generate --builtin simple --rows 1000 --format json --out json_data
+milvus-ingest generate --builtin simple --rows 1000 --format json --out json_data
 
 # 查看生成的文件结构
 ls json_data/
@@ -70,10 +70,10 @@ head -1 json_data/data.json | python -m json.tool | head -20
 ### 插入到Milvus
 ```bash
 # 直接插入（自动检测JSON格式）
-milvus-fake-data to-milvus insert ./json_data --collection-name test_collection
+milvus-ingest to-milvus insert ./json_data --collection-name test_collection
 
 # 批量导入（JSON格式）
-milvus-fake-data to-milvus import \
+milvus-ingest to-milvus import \
   --local-path ./json_data \
   --s3-path json-test/ \
   --bucket test-bucket \
@@ -281,7 +281,7 @@ cat > ecommerce_dynamic.json << 'EOF'
 EOF
 
 # 生成带动态字段的JSON数据
-milvus-fake-data generate \
+milvus-ingest generate \
   --schema ecommerce_dynamic.json \
   --rows 5000 \
   --format json \
@@ -300,14 +300,14 @@ with open('dynamic_ecommerce/data.json', 'r') as f:
 ### 示例2：内容管理系统
 ```bash
 # 使用内置的动态字段示例
-milvus-fake-data generate \
+milvus-ingest generate \
   --builtin dynamic_example \
   --rows 1000 \
   --format json \
   --out cms_content
 
 # 插入到Milvus
-milvus-fake-data to-milvus insert ./cms_content \
+milvus-ingest to-milvus insert ./cms_content \
   --collection-name cms_articles \
   --drop-if-exists
 
@@ -318,24 +318,24 @@ milvus-fake-data to-milvus insert ./cms_content \
 ### 示例3：多格式混合工作流
 ```bash
 # 生成Parquet格式（高性能）
-milvus-fake-data generate \
+milvus-ingest generate \
   --builtin dynamic_example \
   --rows 100000 \
   --format parquet \
   --out large_dataset_parquet
 
 # 生成JSON格式（便于调试）
-milvus-fake-data generate \
+milvus-ingest generate \
   --builtin dynamic_example \
   --rows 1000 \
   --format json \
   --out sample_dataset_json
 
 # 两种格式都可以插入到同一个集合
-milvus-fake-data to-milvus insert ./large_dataset_parquet \
+milvus-ingest to-milvus insert ./large_dataset_parquet \
   --collection-name mixed_collection
 
-milvus-fake-data to-milvus insert ./sample_dataset_json \
+milvus-ingest to-milvus insert ./sample_dataset_json \
   --collection-name mixed_collection
 ```
 
@@ -344,13 +344,13 @@ milvus-fake-data to-milvus insert ./sample_dataset_json \
 ### 1. 格式选择指导
 ```bash
 # 大规模数据生成（>10万行）→ 使用Parquet
-milvus-fake-data generate --builtin simple --rows 1000000 --format parquet
+milvus-ingest generate --builtin simple --rows 1000000 --format parquet
 
 # 小规模调试和验证 → 使用JSON
-milvus-fake-data generate --builtin simple --rows 1000 --format json --preview
+milvus-ingest generate --builtin simple --rows 1000 --format json --preview
 
 # 动态字段调试 → 推荐JSON格式
-milvus-fake-data generate --builtin dynamic_example --rows 100 --format json
+milvus-ingest generate --builtin dynamic_example --rows 100 --format json
 ```
 
 ### 2. 动态字段设计原则
@@ -362,14 +362,14 @@ milvus-fake-data generate --builtin dynamic_example --rows 100 --format json
 ### 3. 性能优化
 ```bash
 # 大数据集使用大批次
-milvus-fake-data generate \
+milvus-ingest generate \
   --builtin dynamic_example \
   --rows 1000000 \
   --format json \
   --batch-size 50000
 
 # 合理设置文件分割
-milvus-fake-data generate \
+milvus-ingest generate \
   --builtin dynamic_example \
   --rows 5000000 \
   --format json \
@@ -380,10 +380,10 @@ milvus-fake-data generate \
 ### 4. 数据验证
 ```bash
 # 生成前验证schema
-milvus-fake-data generate --schema my_schema.json --validate-only
+milvus-ingest generate --schema my_schema.json --validate-only
 
 # 小规模预览
-milvus-fake-data generate --builtin dynamic_example --rows 10 --format json --preview
+milvus-ingest generate --builtin dynamic_example --rows 10 --format json --preview
 
 # 检查动态字段内容
 python3 -c "
@@ -405,7 +405,7 @@ head -1 data.json  # 应该以 [ 开头
 
 # 问题: 动态字段未生成
 # 解决: 检查schema配置
-milvus-fake-data generate --schema schema.json --validate-only
+milvus-ingest generate --schema schema.json --validate-only
 ```
 
 ### 2. Milvus导入问题

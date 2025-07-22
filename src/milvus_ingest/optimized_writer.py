@@ -466,14 +466,19 @@ def _detect_uniform_column(column: pd.Series, field: dict[str, Any]) -> dict[str
         }
     
     # Case 4: All values are the same (even without default_value)
-    unique_vals = column.dropna().unique()
-    if len(unique_vals) == 1 and column.notna().all():
-        return {
-            "type": "uniform_value",
-            "value": unique_vals[0],
-            "reason": "naturally_uniform",
-            "recovery_strategy": "skip_field_recreate_uniform"
-        }
+    # Skip uniform detection for columns containing unhashable types (lists, dicts, etc.)
+    try:
+        unique_vals = column.dropna().unique()
+        if len(unique_vals) == 1 and column.notna().all():
+            return {
+                "type": "uniform_value",
+                "value": unique_vals[0],
+                "reason": "naturally_uniform",
+                "recovery_strategy": "skip_field_recreate_uniform"
+            }
+    except TypeError:
+        # Column contains unhashable types (e.g., lists, dicts), skip uniform detection
+        pass
     
     return None
 

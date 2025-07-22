@@ -1,20 +1,20 @@
-"""Command-line interface for milvus-fake-data.
+"""Command-line interface for milvus-ingest.
 
 Usage::
 
     # Data generation
-    milvus-fake-data generate --schema schema.json --rows 1000
-    milvus-fake-data generate --builtin simple --rows 100 --preview
+    milvus-ingest generate --schema schema.json --rows 1000
+    milvus-ingest generate --builtin simple --rows 100 --preview
 
     # Schema management
-    milvus-fake-data schema list
-    milvus-fake-data schema show simple
-    milvus-fake-data schema add my_schema schema.json
+    milvus-ingest schema list
+    milvus-ingest schema show simple
+    milvus-ingest schema add my_schema schema.json
 
     # Utilities
-    milvus-fake-data clean --yes
+    milvus-ingest clean --yes
 
-The script is installed as ``milvus-fake-data`` when the package is
+The script is installed as ``milvus-ingest`` when the package is
 installed via PDM/pip.
 """
 
@@ -59,8 +59,8 @@ from .uploader import S3Uploader, parse_s3_url
 
 _OUTPUT_FORMATS = {"parquet", "json"}
 
-# Default directory for generated data files: ~/.milvus-fake-data/data
-DEFAULT_DATA_DIR = Path.home() / ".milvus-fake-data" / "data"
+# Default directory for generated data files: ~/.milvus-ingest/data
+DEFAULT_DATA_DIR = Path.home() / ".milvus-ingest" / "data"
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
@@ -82,7 +82,7 @@ def main(ctx: click.Context, verbose: bool = False) -> None:
     ctx.obj["verbose"] = verbose
 
     logger.info(
-        "Starting milvus-fake-data CLI",
+        "Starting milvus-ingest CLI",
         extra={"verbose": verbose},
     )
 
@@ -372,8 +372,89 @@ def generate(
             generation_config=generation_config,
         )
 
-        # Return early if this is just a preview
+        # Handle preview mode - generate a few rows and display them
         if preview:
+            from .optimized_writer import generate_data_optimized
+            import tempfile as tempfile_mod
+            import pandas as pd
+            import json as json_mod
+            
+            with tempfile_mod.TemporaryDirectory() as temp_dir:
+                # Generate 5 rows for preview
+                preview_rows = 5
+                temp_output = Path(temp_dir) / "preview"
+                temp_output.mkdir(exist_ok=True)
+                
+                # Create a temporary schema file for the generator
+                temp_schema_file = Path(temp_dir) / "temp_schema.json"
+                temp_schema = {
+                    "collection_name": collection_name or "preview",
+                    "fields": fields
+                }
+                with open(temp_schema_file, 'w') as f:
+                    json_mod.dump(temp_schema, f)
+                
+                try:
+                    files_created = generate_data_optimized(
+                        schema_path=temp_schema_file,
+                        rows=preview_rows,
+                        output_dir=temp_output,
+                        batch_size=preview_rows,
+                        format="parquet",  # Always use parquet for preview
+                        seed=seed,
+                        max_rows_per_file=preview_rows,
+                        max_file_size_mb=256
+                    )
+                    
+                    if files_created:
+                        # Read and display the generated data
+                        parquet_file = files_created[0]  # First file
+                        df = pd.read_parquet(parquet_file)
+                        
+                        from rich.console import Console
+                        from rich.table import Table
+                        console = Console()
+                        
+                        console.print(f"\n[bold green]Preview (top 5 rows):[/bold green]")
+                        
+                        # Create table for preview
+                        table = Table(show_header=True, header_style="bold magenta")
+                        
+                        # Add columns
+                        for col in df.columns:
+                            table.add_column(col, style="cyan", no_wrap=True)
+                        
+                        # Add rows (limit to 5)
+                        for i in range(min(len(df), 5)):
+                            row_values = []
+                            for col in df.columns:
+                                val = df.iloc[i][col]
+                                # Handle different data types for display
+                                if isinstance(val, list):
+                                    # For arrays/lists, show first few items
+                                    if len(val) > 3:
+                                        display_val = f"[{', '.join(map(str, val[:3]))}...]"
+                                    else:
+                                        display_val = str(val)
+                                elif isinstance(val, dict):
+                                    display_val = "{...}" if val else "{}"
+                                else:
+                                    display_val = str(val)
+                                    # Truncate long strings
+                                    if len(display_val) > 30:
+                                        display_val = display_val[:27] + "..."
+                                row_values.append(display_val)
+                            table.add_row(*row_values)
+                        
+                        console.print(table)
+                        console.print()
+                        
+                except Exception as e:
+                    logger.error("Failed to generate preview data", error=str(e))
+                    from rich.console import Console
+                    console = Console()
+                    console.print(f"[red]Error generating preview: {e}[/red]")
+            
             return
 
     except Exception as e:
@@ -388,7 +469,7 @@ def generate(
         batch_size=batch_size,
     )
     if output_path is None:
-        # derive default file name using default data directory (~/.milvus-fake-data/data)
+        # derive default file name using default data directory (~/.milvus-ingest/data)
         try:
             content = schema_path.read_text("utf-8")
             data = json.loads(content)
@@ -494,7 +575,7 @@ def list_schemas() -> None:
         click.echo("No schemas found.")
 
     click.echo(
-        "\nFor detailed schema information: milvus-fake-data schema show <schema_id>"
+        "\nFor detailed schema information: milvus-ingest schema show <schema_id>"
     )
 
 
@@ -508,7 +589,7 @@ def show(schema_id: str) -> None:
         if not info:
             display_error(
                 f"Schema '{schema_id}' not found.",
-                "Use 'milvus-fake-data schema list' to see available schemas.",
+                "Use 'milvus-ingest schema list' to see available schemas.",
             )
             raise SystemExit(1)
 
@@ -561,7 +642,7 @@ def add(schema_id: str, schema_file: Path) -> None:
 
         details = f"Description: {description or 'N/A'}\n"
         details += f"Use cases: {', '.join(use_cases) if use_cases else 'N/A'}\n"
-        details += f"Usage: milvus-fake-data schema show {schema_id}"
+        details += f"Usage: milvus-ingest schema show {schema_id}"
 
         display_success(f"Added custom schema: {schema_id}", details)
 
@@ -677,13 +758,13 @@ def upload(
     \b
     Examples:
         # Upload to AWS S3
-        milvus-fake-data upload --local-path ./output --s3-path s3://my-bucket/data/
+        milvus-ingest upload --local-path ./output --s3-path s3://my-bucket/data/
 
         # Upload to MinIO
-        milvus-fake-data upload --local-path ./output --s3-path s3://my-bucket/data/ --endpoint-url http://localhost:9000
+        milvus-ingest upload --local-path ./output --s3-path s3://my-bucket/data/ --endpoint-url http://localhost:9000
 
         # With explicit credentials
-        milvus-fake-data upload --local-path ./output --s3-path s3://my-bucket/data/ \\
+        milvus-ingest upload --local-path ./output --s3-path s3://my-bucket/data/ \\
             --access-key-id mykey --secret-access-key mysecret
     """
     try:
@@ -803,16 +884,16 @@ def insert_to_milvus(
     \b
     Examples:
         # Insert to local Milvus
-        milvus-fake-data to-milvus insert ./output
+        milvus-ingest to-milvus insert ./output
 
         # Insert to remote Milvus with token
-        milvus-fake-data to-milvus insert ./output --uri http://192.168.1.100:19530 --token your_token
+        milvus-ingest to-milvus insert ./output --uri http://192.168.1.100:19530 --token your_token
 
         # Drop existing collection and recreate
-        milvus-fake-data to-milvus insert ./output --drop-if-exists
+        milvus-ingest to-milvus insert ./output --drop-if-exists
 
         # Insert with custom collection name
-        milvus-fake-data to-milvus insert ./output --collection-name my_collection
+        milvus-ingest to-milvus insert ./output --collection-name my_collection
     """
     try:
         # Create inserter
@@ -956,16 +1037,16 @@ def import_to_milvus(
     \b
     Examples:
         # Upload and import using collection name from meta.json
-        milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000
+        milvus-ingest to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000
 
         # Upload and import with custom collection name
-        milvus-fake-data to-milvus import --collection-name my_collection --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000
+        milvus-ingest to-milvus import --collection-name my_collection --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000
 
         # Upload and import with credentials
-        milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --access-key-id key --secret-access-key secret
+        milvus-ingest to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --access-key-id key --secret-access-key secret
 
         # Upload and import then wait for completion
-        milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --wait
+        milvus-ingest to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --wait
     """
     from .milvus_importer import MilvusBulkImporter
     from .uploader import S3Uploader

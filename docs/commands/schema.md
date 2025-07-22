@@ -5,18 +5,18 @@
 ## 基本语法
 
 ```bash
-milvus-fake-data schema <SUBCOMMAND> [OPTIONS]
+milvus-ingest schema <SUBCOMMAND> [OPTIONS]
 ```
 
 ## 子命令总览
 
 | 子命令 | 功能 | 示例 |
 |--------|------|------|
-| `list` | 列出所有可用模式 | `milvus-fake-data schema list` |
-| `show` | 显示模式详细信息 | `milvus-fake-data schema show simple` |
-| `add` | 添加自定义模式 | `milvus-fake-data schema add my_schema file.json` |
-| `remove` | 删除自定义模式 | `milvus-fake-data schema remove my_schema` |
-| `help` | 显示模式格式帮助 | `milvus-fake-data schema help` |
+| `list` | 列出所有可用模式 | `milvus-ingest schema list` |
+| `show` | 显示模式详细信息 | `milvus-ingest schema show simple` |
+| `add` | 添加自定义模式 | `milvus-ingest schema add my_schema file.json` |
+| `remove` | 删除自定义模式 | `milvus-ingest schema remove my_schema` |
+| `help` | 显示模式格式帮助 | `milvus-ingest schema help` |
 
 ---
 
@@ -26,7 +26,7 @@ milvus-fake-data schema <SUBCOMMAND> [OPTIONS]
 
 ### 语法
 ```bash
-milvus-fake-data schema list [OPTIONS]
+milvus-ingest schema list [OPTIONS]
 ```
 
 ### 选项
@@ -36,7 +36,7 @@ milvus-fake-data schema list [OPTIONS]
 
 #### 基础列表
 ```bash
-milvus-fake-data schema list
+milvus-ingest schema list
 ```
 
 输出示例：
@@ -64,7 +64,7 @@ milvus-fake-data schema list
 
 #### 详细列表
 ```bash
-milvus-fake-data schema list --verbose
+milvus-ingest schema list --verbose
 ```
 
 输出示例：
@@ -102,7 +102,7 @@ milvus-fake-data schema list --verbose
 
 ### 语法
 ```bash
-milvus-fake-data schema show SCHEMA_ID [OPTIONS]
+milvus-ingest schema show SCHEMA_ID [OPTIONS]
 ```
 
 ### 参数
@@ -116,7 +116,7 @@ milvus-fake-data schema show SCHEMA_ID [OPTIONS]
 
 #### 显示内置模式
 ```bash
-milvus-fake-data schema show simple
+milvus-ingest schema show simple
 ```
 
 输出示例：
@@ -142,7 +142,7 @@ Schema: simple
 
 #### JSON 格式输出
 ```bash
-milvus-fake-data schema show ecommerce --format json
+milvus-ingest schema show ecommerce --format json
 ```
 
 输出原始JSON结构，适合程序处理：
@@ -168,7 +168,7 @@ milvus-fake-data schema show ecommerce --format json
 
 #### 仅显示字段
 ```bash
-milvus-fake-data schema show documents --fields-only
+milvus-ingest schema show documents --fields-only
 ```
 
 ---
@@ -179,7 +179,7 @@ milvus-fake-data schema show documents --fields-only
 
 ### 语法
 ```bash
-milvus-fake-data schema add SCHEMA_ID FILE_PATH [OPTIONS]
+milvus-ingest schema add SCHEMA_ID FILE_PATH [OPTIONS]
 ```
 
 ### 参数
@@ -195,19 +195,19 @@ milvus-fake-data schema add SCHEMA_ID FILE_PATH [OPTIONS]
 
 #### 基础添加
 ```bash
-milvus-fake-data schema add my_products ./schemas/products.json
+milvus-ingest schema add my_products ./schemas/products.json
 ```
 
 #### 带描述和标签
 ```bash
-milvus-fake-data schema add my_products ./schemas/products.json \
+milvus-ingest schema add my_products ./schemas/products.json \
   --description "我的产品目录模式" \
   --tags "产品,电商,自定义"
 ```
 
 #### 覆盖现有模式
 ```bash
-milvus-fake-data schema add my_products ./schemas/products_v2.json \
+milvus-ingest schema add my_products ./schemas/products_v2.json \
   --overwrite \
   --description "产品模式v2.0"
 ```
@@ -215,13 +215,13 @@ milvus-fake-data schema add my_products ./schemas/products_v2.json \
 #### 添加后验证
 ```bash
 # 添加模式
-milvus-fake-data schema add test_schema ./test.json
+milvus-ingest schema add test_schema ./test.json
 
 # 验证添加成功
-milvus-fake-data schema show test_schema
+milvus-ingest schema show test_schema
 
 # 测试使用
-milvus-fake-data generate --builtin test_schema --rows 10 --preview
+milvus-ingest generate --builtin test_schema --rows 10 --preview
 ```
 
 ### 模式文件格式
@@ -287,7 +287,7 @@ fields:
 
 ### 语法
 ```bash
-milvus-fake-data schema remove SCHEMA_ID [OPTIONS]
+milvus-ingest schema remove SCHEMA_ID [OPTIONS]
 ```
 
 ### 参数
@@ -300,7 +300,7 @@ milvus-fake-data schema remove SCHEMA_ID [OPTIONS]
 
 #### 交互式删除
 ```bash
-milvus-fake-data schema remove my_products
+milvus-ingest schema remove my_products
 ```
 
 输出：
@@ -311,14 +311,14 @@ milvus-fake-data schema remove my_products
 
 #### 强制删除
 ```bash
-milvus-fake-data schema remove test_schema --yes
+milvus-ingest schema remove test_schema --yes
 ```
 
 #### 批量删除
 ```bash
 # 删除多个测试模式
 for schema in test1 test2 test3; do
-  milvus-fake-data schema remove $schema --yes
+  milvus-ingest schema remove $schema --yes
 done
 ```
 
@@ -330,7 +330,7 @@ done
 
 ### 语法
 ```bash
-milvus-fake-data schema help [OPTIONS]
+milvus-ingest schema help [OPTIONS]
 ```
 
 ### 选项
@@ -341,14 +341,14 @@ milvus-fake-data schema help [OPTIONS]
 
 #### 基础帮助
 ```bash
-milvus-fake-data schema help
+milvus-ingest schema help
 ```
 
 输出概要格式说明和字段类型列表。
 
 #### 详细帮助
 ```bash
-milvus-fake-data schema help --format detailed
+milvus-ingest schema help --format detailed
 ```
 
 输出完整的格式说明、所有字段类型的详细参数、约束规则等。
@@ -356,10 +356,10 @@ milvus-fake-data schema help --format detailed
 #### 特定字段类型帮助
 ```bash
 # 向量字段帮助
-milvus-fake-data schema help --field-type FloatVector
+milvus-ingest schema help --field-type FloatVector
 
 # 数组字段帮助  
-milvus-fake-data schema help --field-type Array
+milvus-ingest schema help --field-type Array
 ```
 
 ---
@@ -370,17 +370,17 @@ milvus-fake-data schema help --field-type Array
 
 ```bash
 # 查看所有可用模式
-milvus-fake-data schema list --verbose
+milvus-ingest schema list --verbose
 
 # 研究一个内置模式作为参考
-milvus-fake-data schema show ecommerce --format json > reference.json
+milvus-ingest schema show ecommerce --format json > reference.json
 ```
 
 ### 2. 创建自定义模式
 
 ```bash
 # 获取模式格式帮助
-milvus-fake-data schema help --format detailed
+milvus-ingest schema help --format detailed
 
 # 创建模式文件（根据帮助文档）
 cat > my_schema.json << EOF
@@ -407,7 +407,7 @@ cat > my_schema.json << EOF
 EOF
 
 # 添加到模式库
-milvus-fake-data schema add my_custom my_schema.json \
+milvus-ingest schema add my_custom my_schema.json \
   --description "我的自定义模式" \
   --tags "测试,自定义"
 ```
@@ -416,34 +416,34 @@ milvus-fake-data schema add my_custom my_schema.json \
 
 ```bash
 # 验证模式
-milvus-fake-data schema show my_custom
+milvus-ingest schema show my_custom
 
 # 测试生成数据
-milvus-fake-data generate --builtin my_custom --rows 10 --preview
+milvus-ingest generate --builtin my_custom --rows 10 --preview
 
 # 生成实际数据
-milvus-fake-data generate --builtin my_custom --rows 10000 --out ./my_data
+milvus-ingest generate --builtin my_custom --rows 10000 --out ./my_data
 ```
 
 ### 4. 管理模式库
 
 ```bash
 # 查看所有自定义模式
-milvus-fake-data schema list | grep "自定义模式" -A 10
+milvus-ingest schema list | grep "自定义模式" -A 10
 
 # 更新模式（先删除再添加）
-milvus-fake-data schema remove my_custom --yes
-milvus-fake-data schema add my_custom my_schema_v2.json --overwrite
+milvus-ingest schema remove my_custom --yes
+milvus-ingest schema add my_custom my_schema_v2.json --overwrite
 
 # 清理测试模式
-milvus-fake-data schema remove temp_test --yes
+milvus-ingest schema remove temp_test --yes
 ```
 
 ## 模式存储位置
 
 自定义模式存储在：
 ```
-~/.milvus-fake-data/schemas/
+~/.milvus-ingest/schemas/
 ├── my_products.json          # 模式定义
 ├── my_products.meta.json     # 元数据（描述、标签、添加时间）
 └── ...
@@ -467,8 +467,8 @@ v2_products     # 版本前缀
 ### 3. 版本管理
 ```bash
 # 模式版本化
-milvus-fake-data schema add products_v1 schema_v1.json
-milvus-fake-data schema add products_v2 schema_v2.json
+milvus-ingest schema add products_v1 schema_v1.json
+milvus-ingest schema add products_v2 schema_v2.json
 
 # 保留历史版本，方便回滚
 ```

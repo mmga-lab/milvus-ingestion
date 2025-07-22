@@ -58,8 +58,8 @@ export MINIO_ACCESS_KEY=minioadmin
 export MINIO_SECRET_KEY=minioadmin
 export MINIO_BUCKET=a-bucket
 
-# Or use the .env file in project root
-cp .env.example .env  # Edit with your values
+# Or use the .env.example file in project root
+cp .env.example .env  # Create and edit with your values
 ```
 
 **Note:** The `deploy/docker-compose.yml` provides a complete local testing stack including Milvus and MinIO.
@@ -76,54 +76,54 @@ pdm publish       # Publish to PyPI (requires PDM_PUBLISH_TOKEN)
 pdm install
 
 # High-performance data generation commands (optimized for large-scale datasets)
-milvus-fake-data generate --builtin simple --rows 100000 --preview        # Generate 100K rows
-milvus-fake-data generate --schema example_schema.json --rows 1000000     # Generate 1M rows
-milvus-fake-data generate --schema schema.json --rows 5000000 --batch-size 100000 # Use large batch size
+milvus-ingest generate --builtin simple --rows 100000 --preview        # Generate 100K rows
+milvus-ingest generate --schema example_schema.json --rows 1000000     # Generate 1M rows
+milvus-ingest generate --schema schema.json --rows 5000000 --batch-size 100000 # Use large batch size
 
 # Additional generation options
-milvus-fake-data generate --schema schema.json --validate-only            # Validate schema without generating
-milvus-fake-data generate --schema schema.json --rows 1000000 --no-progress # Disable progress bar
-milvus-fake-data generate --schema schema.json --max-file-size 512       # Set max file size (MB)
-milvus-fake-data generate --schema schema.json --max-rows-per-file 500000 # Set max rows per file
-milvus-fake-data generate --schema schema.json --out mydata --force   # Force overwrite existing output
+milvus-ingest generate --schema schema.json --validate-only            # Validate schema without generating
+milvus-ingest generate --schema schema.json --rows 1000000 --no-progress # Disable progress bar
+milvus-ingest generate --schema schema.json --max-file-size 512       # Set max file size (MB)
+milvus-ingest generate --schema schema.json --max-rows-per-file 500000 # Set max rows per file
+milvus-ingest generate --schema schema.json --out mydata --force   # Force overwrite existing output
 
 # Schema management commands
-milvus-fake-data schema list                    # List all schemas
-milvus-fake-data schema show simple            # Show schema details
-milvus-fake-data schema add myschema file.json # Add custom schema
-milvus-fake-data schema remove myschema        # Remove custom schema
-milvus-fake-data schema help                   # Schema format help
+milvus-ingest schema list                    # List all schemas
+milvus-ingest schema show simple            # Show schema details
+milvus-ingest schema add myschema file.json # Add custom schema
+milvus-ingest schema remove myschema        # Remove custom schema
+milvus-ingest schema help                   # Schema format help
 
 # Utility commands
-milvus-fake-data clean                         # Clean up generated files
+milvus-ingest clean                         # Clean up generated files
 
 # Upload to S3/MinIO (standalone upload, useful for separate upload/import workflow)
-milvus-fake-data upload --local-path ./output --s3-path s3://bucket/prefix/              # Upload to AWS S3
-milvus-fake-data upload --local-path ./output --s3-path s3://bucket/prefix/ --endpoint-url http://localhost:9000  # Upload to MinIO
-milvus-fake-data upload --local-path ./output --s3-path s3://bucket/prefix/ --no-verify-ssl  # Disable SSL verification
-milvus-fake-data upload --local-path ./output --s3-path s3://bucket/prefix/ --access-key-id KEY --secret-access-key SECRET  # With credentials
+milvus-ingest upload --local-path ./output --s3-path s3://bucket/prefix/              # Upload to AWS S3
+milvus-ingest upload --local-path ./output --s3-path s3://bucket/prefix/ --endpoint-url http://localhost:9000  # Upload to MinIO
+milvus-ingest upload --local-path ./output --s3-path s3://bucket/prefix/ --no-verify-ssl  # Disable SSL verification
+milvus-ingest upload --local-path ./output --s3-path s3://bucket/prefix/ --access-key-id KEY --secret-access-key SECRET  # With credentials
 
 # Send data to Milvus
 # Direct insert to Milvus (reads local parquet and JSON files and creates collection)
-milvus-fake-data to-milvus insert ./output                                # Insert to local Milvus
-milvus-fake-data to-milvus insert ./output --uri http://192.168.1.100:19530 --token your-token  # Remote Milvus with auth
-milvus-fake-data to-milvus insert ./output --drop-if-exists               # Drop existing collection and recreate
-milvus-fake-data to-milvus insert ./output --collection-name my_collection --batch-size 5000  # Custom settings
+milvus-ingest to-milvus insert ./output                                # Insert to local Milvus
+milvus-ingest to-milvus insert ./output --uri http://192.168.1.100:19530 --token your-token  # Remote Milvus with auth
+milvus-ingest to-milvus insert ./output --drop-if-exists               # Drop existing collection and recreate
+milvus-ingest to-milvus insert ./output --collection-name my_collection --batch-size 5000  # Custom settings
 
 # Bulk import to Milvus (upload + import in one step)
 # Note: Combines upload and import for convenience, includes auto-collection creation
-milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000  # Upload and import
-milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --collection-name my_collection  # Override collection name
-milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --wait  # Wait for completion
-milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --access-key-id key --secret-access-key secret  # With credentials
-milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --drop-if-exists  # Drop and recreate
+milvus-ingest to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000  # Upload and import
+milvus-ingest to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --collection-name my_collection  # Override collection name
+milvus-ingest to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --wait  # Wait for completion
+milvus-ingest to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --access-key-id key --secret-access-key secret  # With credentials
+milvus-ingest to-milvus import --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --drop-if-exists  # Drop and recreate
 ```
 
 ## Architecture Overview
 
 ### Project Structure
 ```
-milvus-fake-data/
+milvus-ingest/
 ├── src/milvus_fake_data/       # Main package
 │   ├── cli.py                  # CLI entry point
 │   ├── optimized_writer.py     # High-performance data generation
@@ -132,7 +132,12 @@ milvus-fake-data/
 │   ├── milvus_inserter.py      # Direct Milvus insertion
 │   ├── milvus_importer.py      # Bulk import from S3/MinIO
 │   ├── uploader.py             # S3/MinIO uploads
-│   └── schemas/                # Built-in schema JSON files
+│   ├── builtin_schemas.py      # Built-in schema definitions
+│   ├── generator.py            # Legacy generator (for compatibility)
+│   ├── rich_display.py         # Rich terminal formatting
+│   ├── logging_config.py       # Loguru-based structured logging
+│   ├── exceptions.py           # Custom exception classes
+│   └── schemas/                # 15 built-in schema JSON files
 ├── tests/                      # Test suite
 │   ├── conftest.py            # Common test fixtures
 │   └── test_*.py              # Test modules
@@ -141,7 +146,23 @@ milvus-fake-data/
 └── README.md                  # User documentation
 ```
 
-[... rest of the existing content remains the same ...]
+### High-Level Architecture
+
+This is a high-performance mock data generator for Milvus vector databases with several key design principles:
+
+1. **Performance-First Design**: Uses vectorized NumPy operations to achieve 10,000-100,000+ rows/second generation speed. The `optimized_writer.py` module handles batch processing and memory-efficient streaming.
+
+2. **Schema-Driven Generation**: All data generation is driven by JSON schemas validated with Pydantic models. Schemas define field types, dimensions, cardinality, and generation modes (faker patterns, ranges, custom values).
+
+3. **Flexible Output Pipeline**:
+   - Generate → Parquet/JSON files → Direct insert to Milvus
+   - Generate → Parquet files → Upload to S3/MinIO → Bulk import to Milvus
+
+4. **Smart File Partitioning**: Automatically splits output into multiple files based on configurable limits (default: 256MB or 1M rows per file) to prevent memory issues and optimize import performance.
+
+5. **Built-in Schema Library**: Includes 15 pre-configured schemas for common use cases (simple vectors, e-commerce, documents, images, etc.) with support for custom schemas.
+
+6. **CLI Architecture**: Click-based command groups (generate, schema, upload, to-milvus, clean) with rich terminal output for better user experience.
 
 ## Testing Workflow Memories
 

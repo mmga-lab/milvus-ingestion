@@ -1,6 +1,6 @@
 # 性能调优指南
 
-深入了解 milvus-fake-data 的性能特点，掌握大规模数据生成的优化技巧，实现最佳的生成效率。
+深入了解 milvus-ingest 的性能特点，掌握大规模数据生成的优化技巧，实现最佳的生成效率。
 
 ## 🎯 性能目标
 
@@ -102,7 +102,7 @@ for batch_size in "${batch_sizes[@]}"; do
     
     start_time=$(date +%s.%N)
     
-    milvus-fake-data generate \
+    milvus-ingest generate \
         --builtin $schema \
         --rows $rows \
         --batch-size $batch_size \
@@ -128,13 +128,13 @@ chmod +x test_batch_size.sh
 
 ```bash
 # 内存受限环境 (8GB RAM)
-milvus-fake-data generate --batch-size 10000
+milvus-ingest generate --batch-size 10000
 
 # 标准环境 (16GB RAM)  
-milvus-fake-data generate --batch-size 50000
+milvus-ingest generate --batch-size 50000
 
 # 高内存环境 (32GB+ RAM)
-milvus-fake-data generate --batch-size 100000
+milvus-ingest generate --batch-size 100000
 ```
 
 ### 文件分割策略
@@ -175,7 +175,7 @@ milvus-fake-data generate --batch-size 100000
 
 ```bash
 # 高吞吐量配置
-milvus-fake-data generate \
+milvus-ingest generate \
     --builtin simple \
     --rows 5000000 \
     --batch-size 200000 \
@@ -198,7 +198,7 @@ milvus-fake-data generate \
 
 ```bash
 # 内存优化配置
-milvus-fake-data generate \
+milvus-ingest generate \
     --builtin ecommerce \
     --rows 10000000 \
     --batch-size 25000 \
@@ -220,7 +220,7 @@ milvus-fake-data generate \
 
 ```bash
 # 存储优化配置
-milvus-fake-data generate \
+milvus-ingest generate \
     --builtin documents \
     --rows 2000000 \
     --batch-size 50000 \
@@ -252,7 +252,7 @@ milvus-fake-data generate \
 
 ```bash
 # 第一轮：基础配置测试
-time milvus-fake-data generate \
+time milvus-ingest generate \
     --builtin ecommerce \
     --rows 100000 \
     --out ./test_baseline
@@ -260,7 +260,7 @@ time milvus-fake-data generate \
 # 结果：100K行用时45秒，预计1000万行需要75分钟
 
 # 第二轮：增加批处理大小
-time milvus-fake-data generate \
+time milvus-ingest generate \
     --builtin ecommerce \
     --rows 100000 \
     --batch-size 100000 \
@@ -269,7 +269,7 @@ time milvus-fake-data generate \
 # 结果：100K行用时28秒，预计1000万行需要47分钟
 
 # 第三轮：优化文件分割
-time milvus-fake-data generate \
+time milvus-ingest generate \
     --builtin ecommerce \
     --rows 100000 \
     --batch-size 100000 \
@@ -280,7 +280,7 @@ time milvus-fake-data generate \
 # 结果：100K行用时25秒，预计1000万行需要42分钟
 
 # 最终生产配置
-time milvus-fake-data generate \
+time milvus-ingest generate \
     --builtin ecommerce \
     --rows 10000000 \
     --batch-size 150000 \
@@ -318,7 +318,7 @@ EOF
 monitor_pid=$!
 
 # 内存优化配置
-milvus-fake-data generate \
+milvus-ingest generate \
     --builtin documents \
     --rows 5000000 \
     --batch-size 15000 \
@@ -426,7 +426,7 @@ python performance_monitor.py 600 &  # 监控10分钟
 monitor_pid=$!
 
 # 运行数据生成
-milvus-fake-data generate \
+milvus-ingest generate \
     --builtin ecommerce \
     --rows 1000000 \
     --batch-size 50000 \
@@ -561,7 +561,7 @@ generate_parallel() {
     
     for i in $(seq 0 $((parallel_jobs - 1))); do
         local start_seed=$((42 + i * 1000))
-        milvus-fake-data generate \
+        milvus-ingest generate \
             --builtin ecommerce \
             --rows $rows_per_job \
             --seed $start_seed \

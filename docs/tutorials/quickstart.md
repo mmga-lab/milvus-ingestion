@@ -1,6 +1,6 @@
 # 快速开始指南
 
-5 分钟上手 milvus-fake-data 工具，从零开始生成高质量的 Milvus 测试数据。
+5 分钟上手 milvus-ingest 工具，从零开始生成高质量的 Milvus 测试数据。
 
 ## 📋 前置条件
 
@@ -12,14 +12,14 @@
 
 ```bash
 # 克隆项目
-git clone https://github.com/zilliz/milvus-fake-data.git
-cd milvus-fake-data
+git clone https://github.com/zilliz/milvus-ingest.git
+cd milvus-ingest
 
 # 安装依赖
 pdm install
 
 # 验证安装
-milvus-fake-data --help
+milvus-ingest --help
 ```
 
 ## 🎯 第二步：生成第一个数据集
@@ -28,7 +28,7 @@ milvus-fake-data --help
 
 ```bash
 # 生成简单测试数据并预览
-milvus-fake-data generate --builtin simple --rows 1000 --preview
+milvus-ingest generate --builtin simple --rows 1000 --preview
 ```
 
 输出示例：
@@ -57,7 +57,7 @@ Collection: simple_collection
 
 ```bash
 # 生成1万行数据
-milvus-fake-data generate --builtin simple --rows 10000 --out ./my_first_dataset
+milvus-ingest generate --builtin simple --rows 10000 --out ./my_first_dataset
 ```
 
 输出：
@@ -80,7 +80,7 @@ milvus-fake-data generate --builtin simple --rows 10000 --out ./my_first_dataset
 ### 查看所有可用模式
 
 ```bash
-milvus-fake-data schema list
+milvus-ingest schema list
 ```
 
 输出：
@@ -106,12 +106,12 @@ milvus-fake-data schema list
 
 ```bash
 # 先预览电商模式的结构
-milvus-fake-data schema show ecommerce
+milvus-ingest schema show ecommerce
 ```
 
 ```bash
 # 生成电商测试数据
-milvus-fake-data generate --builtin ecommerce --rows 5000 --out ./ecommerce_data
+milvus-ingest generate --builtin ecommerce --rows 5000 --out ./ecommerce_data
 ```
 
 这会生成包含产品信息、价格、评分、多个向量字段的真实电商数据。
@@ -216,13 +216,13 @@ EOF
 
 ```bash
 # 验证模式格式
-milvus-fake-data generate --schema my_products.json --validate-only
+milvus-ingest generate --schema my_products.json --validate-only
 
 # 预览数据
-milvus-fake-data generate --schema my_products.json --rows 100 --preview
+milvus-ingest generate --schema my_products.json --rows 100 --preview
 
 # 生成数据集
-milvus-fake-data generate --schema my_products.json --rows 10000 --out ./my_products_data
+milvus-ingest generate --schema my_products.json --rows 10000 --out ./my_products_data
 ```
 
 ## 📊 第六步：性能测试
@@ -230,19 +230,19 @@ milvus-fake-data generate --schema my_products.json --rows 10000 --out ./my_prod
 ### 小规模测试
 ```bash
 # 1万行数据 - 几秒内完成
-time milvus-fake-data generate --builtin ecommerce --rows 10000 --out ./small_test
+time milvus-ingest generate --builtin ecommerce --rows 10000 --out ./small_test
 ```
 
 ### 中等规模测试
 ```bash
 # 10万行数据 - 约30秒
-time milvus-fake-data generate --builtin ecommerce --rows 100000 --out ./medium_test
+time milvus-ingest generate --builtin ecommerce --rows 100000 --out ./medium_test
 ```
 
 ### 大规模测试（可选）
 ```bash
 # 100万行数据 - 约5分钟
-time milvus-fake-data generate --builtin ecommerce --rows 1000000 --out ./large_test
+time milvus-ingest generate --builtin ecommerce --rows 1000000 --out ./large_test
 ```
 
 ## 🔄 第七步：连接到 Milvus（可选）
@@ -264,7 +264,7 @@ sleep 30
 
 ```bash
 # 直接插入小规模数据
-milvus-fake-data to-milvus insert ./my_first_dataset
+milvus-ingest to-milvus insert ./my_first_dataset
 
 # 检查导入结果
 curl -X POST "http://localhost:19530/v1/vector/collections/simple_collection/query" \
@@ -282,8 +282,8 @@ curl -X POST "http://localhost:19530/v1/vector/collections/simple_collection/que
 ls -la ./
 
 # 清理测试数据（保留重要的）
-milvus-fake-data clean --dry-run  # 先预览
-milvus-fake-data clean --yes      # 确认清理
+milvus-ingest clean --dry-run  # 先预览
+milvus-ingest clean --yes      # 确认清理
 ```
 
 ## 🎉 完成！你已经学会了：
@@ -310,19 +310,19 @@ milvus-fake-data clean --yes      # 确认清理
 ### 最常用命令
 ```bash
 # 快速预览
-milvus-fake-data generate --builtin simple --rows 1000 --preview
+milvus-ingest generate --builtin simple --rows 1000 --preview
 
 # 生成测试数据  
-milvus-fake-data generate --builtin <schema> --rows <count> --out <dir>
+milvus-ingest generate --builtin <schema> --rows <count> --out <dir>
 
 # 查看所有模式
-milvus-fake-data schema list
+milvus-ingest schema list
 
 # 查看模式详情
-milvus-fake-data schema show <schema_name>
+milvus-ingest schema show <schema_name>
 
 # 清理环境
-milvus-fake-data clean --yes
+milvus-ingest clean --yes
 ```
 
 ### 常用模式推荐

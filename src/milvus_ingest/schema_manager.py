@@ -17,7 +17,7 @@ class SchemaManager:
         """Initialize schema manager.
 
         Args:
-            schema_dir: Directory to store custom schemas. Defaults to ~/.milvus-fake-data/schemas
+            schema_dir: Directory to store custom schemas. Defaults to ~/.milvus-ingest/schemas
         """
         self.logger = get_logger(__name__)
 
@@ -27,7 +27,7 @@ class SchemaManager:
             if env_path:
                 schema_dir = Path(env_path)
             else:
-                schema_dir = Path.home() / ".milvus-fake-data" / "schemas"
+                schema_dir = Path.home() / ".milvus-ingest" / "schemas"
 
         self.schema_dir = Path(schema_dir)
         self.schema_dir.mkdir(parents=True, exist_ok=True)

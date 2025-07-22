@@ -1,13 +1,13 @@
-# Contributing to milvus-fake-data
+# Contributing to milvus-ingest
 
-Thank you for your interest in contributing to milvus-fake-data! This document provides guidelines and information for contributors.
+Thank you for your interest in contributing to milvus-ingest! This document provides guidelines and information for contributors.
 
 ## 🚀 Quick Start
 
 1. **Fork and Clone**
    ```bash
-   git clone https://github.com/your-username/milvus-fake-data.git
-   cd milvus-fake-data
+   git clone https://github.com/your-username/milvus-ingest.git
+   cd milvus-ingest
    ```
 
 2. **Set up Development Environment**
@@ -169,7 +169,7 @@ Use the feature request template and include:
 ## 🏗️ Project Structure
 
 ```
-milvus-fake-data/
+milvus-ingest/
 ├── src/milvus_fake_data/
 │   ├── __init__.py
 │   ├── cli.py          # Command-line interface
@@ -237,4 +237,4 @@ Contributors are automatically recognized in:
 - Release notes
 - Special thanks in major releases
 
-Thank you for contributing to milvus-fake-data! 🚀
+Thank you for contributing to milvus-ingest! 🚀

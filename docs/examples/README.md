@@ -1,6 +1,6 @@
 # 实际应用场景示例
 
-这里提供了各种业务场景下使用 milvus-fake-data 的具体示例，帮助你快速应用到实际项目中。
+这里提供了各种业务场景下使用 milvus-ingest 的具体示例，帮助你快速应用到实际项目中。
 
 ## 📋 场景分类
 
@@ -37,16 +37,16 @@
 
 ```bash
 # 电商推荐系统
-milvus-fake-data generate --builtin ecommerce --rows 100000 --out ./ecommerce_demo
+milvus-ingest generate --builtin ecommerce --rows 100000 --out ./ecommerce_demo
 
 # 文档搜索系统
-milvus-fake-data generate --builtin documents --rows 50000 --out ./docs_demo
+milvus-ingest generate --builtin documents --rows 50000 --out ./docs_demo
 
 # 多媒体应用
-milvus-fake-data generate --builtin images --rows 30000 --out ./media_demo
+milvus-ingest generate --builtin images --rows 30000 --out ./media_demo
 
 # AI 对话系统
-milvus-fake-data generate --builtin ai_conversations --rows 20000 --out ./ai_demo
+milvus-ingest generate --builtin ai_conversations --rows 20000 --out ./ai_demo
 ```
 
 ### 查看具体示例
@@ -68,8 +68,8 @@ milvus-fake-data generate --builtin ai_conversations --rows 20000 --out ./ai_dem
 
 ```bash
 # 快速原型
-milvus-fake-data generate --builtin simple --rows 1000 --preview
-milvus-fake-data generate --builtin ecommerce --rows 5000 --out ./prototype
+milvus-ingest generate --builtin simple --rows 1000 --preview
+milvus-ingest generate --builtin ecommerce --rows 5000 --out ./prototype
 ```
 
 **适用场景:**
@@ -83,8 +83,8 @@ milvus-fake-data generate --builtin ecommerce --rows 5000 --out ./prototype
 
 ```bash
 # 开发测试
-milvus-fake-data generate --builtin documents --rows 50000 --out ./dev_test
-milvus-fake-data generate --builtin users --rows 20000 --out ./user_test
+milvus-ingest generate --builtin documents --rows 50000 --out ./dev_test
+milvus-ingest generate --builtin users --rows 20000 --out ./user_test
 ```
 
 **适用场景:**
@@ -98,8 +98,8 @@ milvus-fake-data generate --builtin users --rows 20000 --out ./user_test
 
 ```bash
 # 压力测试
-milvus-fake-data generate --builtin ecommerce --rows 500000 --batch-size 50000 --out ./stress_test
-milvus-fake-data generate --builtin images --rows 200000 --out ./load_test
+milvus-ingest generate --builtin ecommerce --rows 500000 --batch-size 50000 --out ./stress_test
+milvus-ingest generate --builtin images --rows 200000 --out ./load_test
 ```
 
 **适用场景:**
@@ -113,7 +113,7 @@ milvus-fake-data generate --builtin images --rows 200000 --out ./load_test
 
 ```bash
 # 生产规模
-milvus-fake-data generate --builtin documents --rows 5000000 \
+milvus-ingest generate --builtin documents --rows 5000000 \
   --batch-size 100000 --max-file-size 512 --out ./production_scale
 ```
 
@@ -130,8 +130,8 @@ milvus-fake-data generate --builtin documents --rows 5000000 \
 
 ```bash
 # 低维度应用
-milvus-fake-data generate --builtin simple --rows 100000  # 128维
-milvus-fake-data generate --builtin face_recognition --rows 50000  # 512维人脸特征
+milvus-ingest generate --builtin simple --rows 100000  # 128维
+milvus-ingest generate --builtin face_recognition --rows 50000  # 512维人脸特征
 ```
 
 **特点:**
@@ -145,8 +145,8 @@ milvus-fake-data generate --builtin face_recognition --rows 50000  # 512维人�
 
 ```bash
 # 中等维度应用  
-milvus-fake-data generate --builtin ecommerce --rows 100000  # 多个256-512维向量
-milvus-fake-data generate --builtin images --rows 50000     # 512维图像特征
+milvus-ingest generate --builtin ecommerce --rows 100000  # 多个256-512维向量
+milvus-ingest generate --builtin images --rows 50000     # 512维图像特征
 ```
 
 **特点:**
@@ -160,8 +160,8 @@ milvus-fake-data generate --builtin images --rows 50000     # 512维图像特征
 
 ```bash
 # 高维度应用
-milvus-fake-data generate --builtin documents --rows 100000  # 768维BERT嵌入
-milvus-fake-data generate --builtin ai_conversations --rows 50000  # 1536维GPT嵌入
+milvus-ingest generate --builtin documents --rows 100000  # 768维BERT嵌入
+milvus-ingest generate --builtin ai_conversations --rows 50000  # 1536维GPT嵌入
 ```
 
 **特点:**
@@ -177,8 +177,8 @@ milvus-fake-data generate --builtin ai_conversations --rows 50000  # 1536维GPT�
 
 ```bash
 # 单集合设计
-milvus-fake-data generate --builtin simple --rows 100000 --out ./single_collection
-milvus-fake-data to-milvus insert ./single_collection
+milvus-ingest generate --builtin simple --rows 100000 --out ./single_collection
+milvus-ingest to-milvus insert ./single_collection
 ```
 
 **特点:**
@@ -192,14 +192,14 @@ milvus-fake-data to-milvus insert ./single_collection
 
 ```bash
 # 多集合设计
-milvus-fake-data generate --builtin users --rows 50000 --out ./users_collection
-milvus-fake-data generate --builtin ecommerce --rows 100000 --out ./products_collection
-milvus-fake-data generate --builtin documents --rows 30000 --out ./docs_collection
+milvus-ingest generate --builtin users --rows 50000 --out ./users_collection
+milvus-ingest generate --builtin ecommerce --rows 100000 --out ./products_collection
+milvus-ingest generate --builtin documents --rows 30000 --out ./docs_collection
 
 # 分别导入
-milvus-fake-data to-milvus insert ./users_collection --collection-name users
-milvus-fake-data to-milvus insert ./products_collection --collection-name products  
-milvus-fake-data to-milvus insert ./docs_collection --collection-name documents
+milvus-ingest to-milvus insert ./users_collection --collection-name users
+milvus-ingest to-milvus insert ./products_collection --collection-name products  
+milvus-ingest to-milvus insert ./docs_collection --collection-name documents
 ```
 
 **特点:**
@@ -213,8 +213,8 @@ milvus-fake-data to-milvus insert ./docs_collection --collection-name documents
 
 ```bash
 # 分区集合设计
-milvus-fake-data generate --builtin ecommerce_partitioned --rows 500000 --out ./partitioned_data
-milvus-fake-data to-milvus insert ./partitioned_data
+milvus-ingest generate --builtin ecommerce_partitioned --rows 500000 --out ./partitioned_data
+milvus-ingest to-milvus insert ./partitioned_data
 ```
 
 **特点:**
@@ -254,13 +254,13 @@ graph TD
 # 针对不同场景的优化建议
 
 # 高QPS场景 - 使用较小向量维度
-milvus-fake-data generate --builtin simple --rows 1000000  # 128维
+milvus-ingest generate --builtin simple --rows 1000000  # 128维
 
 # 高精度场景 - 使用大模型向量
-milvus-fake-data generate --builtin documents --rows 100000  # 768维
+milvus-ingest generate --builtin documents --rows 100000  # 768维
 
 # 大数据量场景 - 优化批处理
-milvus-fake-data generate --builtin ecommerce --rows 5000000 \
+milvus-ingest generate --builtin ecommerce --rows 5000000 \
   --batch-size 100000 --max-file-size 512
 ```
 

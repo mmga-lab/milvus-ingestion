@@ -1,4 +1,4 @@
-"""Built-in schema management for milvus-fake-data."""
+"""Built-in schema management for milvus-ingest."""
 
 from __future__ import annotations
 
@@ -244,9 +244,9 @@ def get_schema_summary() -> str:
         summary += "**Usage:**\n"
         summary += "```bash\n"
         summary += "# Use built-in schema\n"
-        summary += f"milvus-fake-data --builtin {schema_id} --rows 1000\n\n"
+        summary += f"milvus-ingest --builtin {schema_id} --rows 1000\n\n"
         summary += "# Save schema to file for customization\n"
-        summary += f"milvus-fake-data --builtin {schema_id} --save-schema my_{schema_id}.json\n"
+        summary += f"milvus-ingest --builtin {schema_id} --save-schema my_{schema_id}.json\n"
         summary += "```\n\n"
         summary += "---\n\n"
 

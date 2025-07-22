@@ -46,17 +46,17 @@ RUN chown appuser:appuser /data
 USER appuser
 
 # Set default command
-ENTRYPOINT ["milvus-fake-data"]
+ENTRYPOINT ["milvus-ingest"]
 CMD ["--help"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD milvus-fake-data --help > /dev/null || exit 1
+    CMD milvus-ingest --help > /dev/null || exit 1
 
 # Metadata
 LABEL maintainer="zhuwenxing <wenxing.zhu@zilliz.com>" \
       description="Generate mock data for Milvus collections" \
       version="0.1.0" \
-      org.opencontainers.image.source="https://github.com/zilliztech/milvus-fake-data" \
-      org.opencontainers.image.documentation="https://github.com/zilliztech/milvus-fake-data/blob/main/README.md" \
+      org.opencontainers.image.source="https://github.com/zilliztech/milvus-ingest" \
+      org.opencontainers.image.documentation="https://github.com/zilliztech/milvus-ingest/blob/main/README.md" \
       org.opencontainers.image.licenses="MIT"

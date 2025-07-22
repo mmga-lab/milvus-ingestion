@@ -1,6 +1,6 @@
-# High-Performance Milvus Data Generator
+# Milvus Ingest - High-Performance Data Ingestion Tool
 
-🚀 **Ultra-fast mock data generator for Milvus vector databases** - Built for large-scale data generation with vectorized operations, parallel processing, and optimized file I/O. Generate millions of rows in seconds with automatic file partitioning and intelligent memory management.
+🚀 **Ultra-fast data ingestion tool for Milvus vector databases** - Built for large-scale data generation and ingestion with vectorized operations, parallel processing, and optimized file I/O. Generate and ingest millions of rows in seconds with automatic file partitioning and intelligent memory management.
 
 ## ⚡ Performance Highlights
 
@@ -28,15 +28,15 @@
 
 ```bash
 # Install from source (recommended for development)
-git clone https://github.com/zilliz/milvus-fake-data.git
-cd milvus-fake-data
+git clone https://github.com/zilliz/milvus-ingest.git
+cd milvus-ingest
 pdm install  # Installs with development dependencies
 
 # For production use only
 pdm install --prod
 
 # After installation, the CLI tool is available as:
-milvus-fake-data --help
+milvus-ingest --help
 ```
 
 ## 🚀 Quick Start
@@ -47,13 +47,13 @@ Get started instantly with pre-built schemas optimized for large-scale generatio
 
 ```bash
 # List all available built-in schemas
-milvus-fake-data schema list
+milvus-ingest schema list
 
 # Generate data using a built-in schema (high-performance by default)
-milvus-fake-data generate --builtin simple --rows 100000 --preview
+milvus-ingest generate --builtin simple --rows 100000 --preview
 
 # Generate large e-commerce dataset with automatic file partitioning
-milvus-fake-data generate --builtin ecommerce --rows 2500000 --out products/
+milvus-ingest generate --builtin ecommerce --rows 2500000 --out products/
 ```
 
 **Available Built-in Schemas:**
@@ -101,7 +101,7 @@ Define your own collection structure with JSON or YAML:
 
 ```bash
 # Generate large dataset from custom schema with high-performance mode
-milvus-fake-data generate --schema my_schema.json --rows 1000000 --format parquet --preview
+milvus-ingest generate --schema my_schema.json --rows 1000000 --format parquet --preview
 ```
 
 **Note:** Output is always a directory containing data files (in the specified format) and a `meta.json` file with collection metadata.
@@ -112,24 +112,24 @@ Store and organize your schemas for reuse:
 
 ```bash
 # Add a custom schema to your library
-milvus-fake-data schema add my_products product_schema.json
+milvus-ingest schema add my_products product_schema.json
 
 # List all schemas (built-in + custom)
-milvus-fake-data schema list
+milvus-ingest schema list
 
 # Use your custom schema like a built-in one (optimized for large datasets)
-milvus-fake-data generate --builtin my_products --rows 500000
+milvus-ingest generate --builtin my_products --rows 500000
 
 # Show detailed schema information
-milvus-fake-data schema show my_products
+milvus-ingest schema show my_products
 ```
 
 ### 4. Python API
 
 ```python
-from milvus_fake_data.generator import generate_mock_data
-from milvus_fake_data.schema_manager import get_schema_manager
-from milvus_fake_data.builtin_schemas import load_builtin_schema
+from milvus_ingest.generator import generate_mock_data
+from milvus_ingest.schema_manager import get_schema_manager
+from milvus_ingest.builtin_schemas import load_builtin_schema
 import tempfile
 import json
 
@@ -268,71 +268,71 @@ The CLI uses a clean grouped structure:
 
 ```bash
 # Main command groups
-milvus-fake-data generate [options]  # Data generation
-milvus-fake-data schema [command]    # Schema management
-milvus-fake-data clean [options]     # Utility commands
+milvus-ingest generate [options]  # Data generation
+milvus-ingest schema [command]    # Schema management
+milvus-ingest clean [options]     # Utility commands
 ```
 
 ### Data Generation Commands
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `--schema PATH` | Generate from custom schema file | `milvus-fake-data generate --schema my_schema.json` |
-| `--builtin SCHEMA_ID` | Use built-in or managed schema | `milvus-fake-data generate --builtin ecommerce` |
-| `--rows INTEGER` | Number of rows to generate | `milvus-fake-data generate --rows 5000` |
-| `--format FORMAT` | Output format (parquet, json) | `milvus-fake-data generate --format json` |
-| `--out DIRECTORY` | Output directory path | `milvus-fake-data generate --out my_data/` |
-| `--preview` | Show first 5 rows | `milvus-fake-data generate --preview` |
-| `--seed INTEGER` | Random seed for reproducibility | `milvus-fake-data generate --seed 42` |
-| `--validate-only` | Validate schema without generating | `milvus-fake-data generate --validate-only` |
-| `--no-progress` | Disable progress bar display | `milvus-fake-data generate --no-progress` |
-| `--batch-size INTEGER` | Batch size for memory efficiency (default: 50000) | `milvus-fake-data generate --batch-size 100000` |
-| `--max-file-size INTEGER` | Maximum size per file in MB (default: 256) | `milvus-fake-data generate --max-file-size 100` |
-| `--max-rows-per-file INTEGER` | Maximum rows per file (default: 1000000) | `milvus-fake-data generate --max-rows-per-file 500000` |
-| `--force` | Force overwrite output directory | `milvus-fake-data generate --force` |
+| `--schema PATH` | Generate from custom schema file | `milvus-ingest generate --schema my_schema.json` |
+| `--builtin SCHEMA_ID` | Use built-in or managed schema | `milvus-ingest generate --builtin ecommerce` |
+| `--rows INTEGER` | Number of rows to generate | `milvus-ingest generate --rows 5000` |
+| `--format FORMAT` | Output format (parquet, json) | `milvus-ingest generate --format json` |
+| `--out DIRECTORY` | Output directory path | `milvus-ingest generate --out my_data/` |
+| `--preview` | Show first 5 rows | `milvus-ingest generate --preview` |
+| `--seed INTEGER` | Random seed for reproducibility | `milvus-ingest generate --seed 42` |
+| `--validate-only` | Validate schema without generating | `milvus-ingest generate --validate-only` |
+| `--no-progress` | Disable progress bar display | `milvus-ingest generate --no-progress` |
+| `--batch-size INTEGER` | Batch size for memory efficiency (default: 50000) | `milvus-ingest generate --batch-size 100000` |
+| `--max-file-size INTEGER` | Maximum size per file in MB (default: 256) | `milvus-ingest generate --max-file-size 100` |
+| `--max-rows-per-file INTEGER` | Maximum rows per file (default: 1000000) | `milvus-ingest generate --max-rows-per-file 500000` |
+| `--force` | Force overwrite output directory | `milvus-ingest generate --force` |
 
 ### Schema Management Commands
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `schema list` | List all schemas (built-in + custom) | `milvus-fake-data schema list` |
-| `schema show SCHEMA_ID` | Show schema details | `milvus-fake-data schema show ecommerce` |
-| `schema add SCHEMA_ID FILE` | Add custom schema | `milvus-fake-data schema add products schema.json` |
-| `schema remove SCHEMA_ID` | Remove custom schema | `milvus-fake-data schema remove products` |
-| `schema help` | Show schema format help | `milvus-fake-data schema help` |
+| `schema list` | List all schemas (built-in + custom) | `milvus-ingest schema list` |
+| `schema show SCHEMA_ID` | Show schema details | `milvus-ingest schema show ecommerce` |
+| `schema add SCHEMA_ID FILE` | Add custom schema | `milvus-ingest schema add products schema.json` |
+| `schema remove SCHEMA_ID` | Remove custom schema | `milvus-ingest schema remove products` |
+| `schema help` | Show schema format help | `milvus-ingest schema help` |
 
 ### Utility Commands
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `clean` | Clean up generated output files | `milvus-fake-data clean --yes` |
-| `--help` | Show help message | `milvus-fake-data --help` |
+| `clean` | Clean up generated output files | `milvus-ingest clean --yes` |
+| `--help` | Show help message | `milvus-ingest --help` |
 
 ### Common Usage Patterns
 
 ```bash
 # Quick start with built-in schema (high-performance by default)
-milvus-fake-data generate --builtin simple --rows 100000 --preview
+milvus-ingest generate --builtin simple --rows 100000 --preview
 
 # Generate massive datasets with automatic file partitioning 
-milvus-fake-data generate --builtin ecommerce --rows 5000000 --format parquet --out products/
+milvus-ingest generate --builtin ecommerce --rows 5000000 --format parquet --out products/
 
 # Test custom schema validation
-milvus-fake-data generate --schema my_schema.json --validate-only
+milvus-ingest generate --schema my_schema.json --validate-only
 
 # Reproducible large-scale data generation
-milvus-fake-data generate --builtin users --rows 2000000 --seed 42 --out users/
+milvus-ingest generate --builtin users --rows 2000000 --seed 42 --out users/
 
 # Control file partitioning (smaller files for easier handling)
-milvus-fake-data generate --builtin ecommerce --rows 5000000 --max-file-size 128 --max-rows-per-file 500000
+milvus-ingest generate --builtin ecommerce --rows 5000000 --max-file-size 128 --max-rows-per-file 500000
 
 # Schema management workflow
-milvus-fake-data schema list
-milvus-fake-data schema show ecommerce
-milvus-fake-data schema add my_ecommerce ecommerce_base.json
+milvus-ingest schema list
+milvus-ingest schema show ecommerce
+milvus-ingest schema add my_ecommerce ecommerce_base.json
 
 # Clean up generated output files
-milvus-fake-data clean --yes
+milvus-ingest clean --yes
 ```
 
 ## 🔗 Milvus Integration
@@ -343,19 +343,19 @@ Insert generated data directly into Milvus with automatic collection creation:
 
 ```bash
 # Generate data first
-milvus-fake-data generate --builtin ecommerce --rows 100000 --out products/
+milvus-ingest generate --builtin ecommerce --rows 100000 --out products/
 
 # Insert to local Milvus (default: localhost:19530)
-milvus-fake-data to-milvus insert ./products/
+milvus-ingest to-milvus insert ./products/
 
 # Insert to remote Milvus with authentication
-milvus-fake-data to-milvus insert ./products/ \
+milvus-ingest to-milvus insert ./products/ \
     --uri http://192.168.1.100:19530 \
     --token your-api-token \
     --db-name custom_db
 
 # Insert with custom settings
-milvus-fake-data to-milvus insert ./products/ \
+milvus-ingest to-milvus insert ./products/ \
     --collection-name product_catalog \
     --batch-size 5000 \
     --drop-if-exists
@@ -374,24 +374,24 @@ For very large datasets, use bulk import with pre-uploaded files:
 
 ```bash
 # First, upload to S3/MinIO
-milvus-fake-data upload ./products/ s3://bucket/data/ \
+milvus-ingest upload ./products/ s3://bucket/data/ \
     --endpoint-url http://minio:9000 \
     --access-key-id minioadmin \
     --secret-access-key minioadmin
 
 # Then bulk import to Milvus
-milvus-fake-data to-milvus import product_catalog s3://bucket/data/file1.parquet
+milvus-ingest to-milvus import product_catalog s3://bucket/data/file1.parquet
 
 # Import multiple files
-milvus-fake-data to-milvus import product_catalog \
+milvus-ingest to-milvus import product_catalog \
     s3://bucket/data/file1.parquet \
     s3://bucket/data/file2.parquet
 
 # Import all files from directory
-milvus-fake-data to-milvus import product_catalog ./products/
+milvus-ingest to-milvus import product_catalog ./products/
 
 # Import and wait for completion
-milvus-fake-data to-milvus import product_catalog ./products/ \
+milvus-ingest to-milvus import product_catalog ./products/ \
     --wait \
     --timeout 300
 ```
@@ -409,10 +409,10 @@ Upload generated data to S3-compatible storage:
 
 ```bash
 # Upload to AWS S3 (using default credentials)
-milvus-fake-data upload ./output s3://my-bucket/data/
+milvus-ingest upload ./output s3://my-bucket/data/
 
 # Upload to MinIO with custom endpoint
-milvus-fake-data upload ./output s3://my-bucket/data/ \
+milvus-ingest upload ./output s3://my-bucket/data/ \
     --endpoint-url http://localhost:9000 \
     --access-key-id minioadmin \
     --secret-access-key minioadmin
@@ -420,10 +420,10 @@ milvus-fake-data upload ./output s3://my-bucket/data/ \
 # Upload with environment variables
 export AWS_ACCESS_KEY_ID=your-key
 export AWS_SECRET_ACCESS_KEY=your-secret
-milvus-fake-data upload ./output s3://my-bucket/data/
+milvus-ingest upload ./output s3://my-bucket/data/
 
 # Disable SSL verification for local MinIO
-milvus-fake-data upload ./output s3://my-bucket/data/ \
+milvus-ingest upload ./output s3://my-bucket/data/ \
     --endpoint-url http://localhost:9000 \
     --no-verify-ssl
 ```
@@ -432,20 +432,20 @@ milvus-fake-data upload ./output s3://my-bucket/data/ \
 
 ```bash
 # 1. Generate large dataset
-milvus-fake-data generate --builtin ecommerce --rows 5000000 --out products/
+milvus-ingest generate --builtin ecommerce --rows 5000000 --out products/
 
 # 2. Option A: Direct insert (for smaller datasets)
-milvus-fake-data to-milvus insert ./products/ \
+milvus-ingest to-milvus insert ./products/ \
     --uri http://milvus:19530 \
     --collection-name ecommerce_products
 
 # 2. Option B: Bulk import (for very large datasets)
 # First upload to MinIO
-milvus-fake-data upload ./products/ s3://milvus-data/products/ \
+milvus-ingest upload ./products/ s3://milvus-data/products/ \
     --endpoint-url http://minio:9000
 
 # Then bulk import
-milvus-fake-data to-milvus import ecommerce_products \
+milvus-ingest to-milvus import ecommerce_products \
     s3://milvus-data/products/ \
     --wait
 ```
@@ -471,8 +471,8 @@ This project uses PDM for dependency management and follows modern Python develo
 
 ```bash
 # Clone and setup
-git clone https://github.com/your-org/milvus-fake-data.git
-cd milvus-fake-data
+git clone https://github.com/your-org/milvus-ingest.git
+cd milvus-ingest
 pdm install  # Install development dependencies
 ```
 

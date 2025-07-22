@@ -1,4 +1,4 @@
-"""Comprehensive End-to-End tests for milvus-fake-data CLI.
+"""Comprehensive End-to-End tests for milvus-ingest CLI.
 
 This test suite covers all major functionality including:
 - Data generation with built-in and custom schemas
@@ -10,13 +10,14 @@ This test suite covers all major functionality including:
 """
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
 from click.testing import CliRunner
 
-from milvus_fake_data.cli import main
+from milvus_ingest.cli import main
 
 
 @pytest.fixture
@@ -90,7 +91,7 @@ class TestDataGeneration:
             )
 
             # Check output directory exists
-            output_dir = Path.home() / ".milvus-fake-data" / "data" / "simple_example"
+            output_dir = Path.home() / ".milvus-ingest" / "data" / "simple_example"
             assert output_dir.exists()
 
             # Check meta.json exists
@@ -365,7 +366,7 @@ class TestSchemaManagement:
 class TestS3MinIOIntegration:
     """Test S3/MinIO upload functionality."""
 
-    def test_upload_to_minio(self, cli_runner, sample_schema):
+    def test_upload_to_minio(self, cli_runner, sample_schema, mock_env_vars):
         """Test uploading data to local MinIO."""
         with cli_runner.isolated_filesystem():
             # Generate data first
@@ -387,19 +388,16 @@ class TestS3MinIOIntegration:
             )
             assert result.exit_code == 0
 
-            # Test upload to local MinIO
+            # Test upload to MinIO
             result = cli_runner.invoke(
                 main,
                 [
                     "upload",
-                    "test_data",
-                    "s3://a-bucket/test-upload/",
-                    "--access-key-id",
-                    "minioadmin",
-                    "--secret-access-key",
-                    "minioadmin",
-                    "--endpoint-url",
-                    "http://127.0.0.1:9000",
+                    "--local-path", "test_data",
+                    "--s3-path", f"s3://{os.environ.get('MINIO_BUCKET', 'a-bucket')}/test-upload/",
+                    "--access-key-id", os.environ.get('MINIO_ACCESS_KEY', 'minioadmin'),
+                    "--secret-access-key", os.environ.get('MINIO_SECRET_KEY', 'minioadmin'),
+                    "--endpoint-url", f"http://{os.environ.get('MINIO_HOST', '127.0.0.1')}:9000",
                     "--no-verify-ssl",
                 ],
             )
@@ -415,7 +413,7 @@ class TestS3MinIOIntegration:
 class TestMilvusIntegration:
     """Test Milvus integration functionality."""
 
-    def test_milvus_insert(self, cli_runner, sample_schema):
+    def test_milvus_insert(self, cli_runner, sample_schema, mock_env_vars):
         """Test direct insert to local Milvus."""
         with cli_runner.isolated_filesystem():
             # Create a simple schema without sparse vector for Milvus compatibility
@@ -476,8 +474,8 @@ class TestMilvusIntegration:
             # Insert succeeded if exit code is 0 and no error messages
             assert "error" not in result.output.lower()
 
-    @patch("milvus_fake_data.milvus_importer.MilvusBulkImporter")
-    def test_milvus_bulk_import(self, mock_importer, cli_runner):
+    @patch("milvus_ingest.milvus_importer.MilvusBulkImporter")
+    def test_milvus_bulk_import(self, mock_importer, cli_runner, mock_env_vars):
         """Test bulk import to Milvus."""
         with cli_runner.isolated_filesystem():
             # Create dummy data file
@@ -498,11 +496,16 @@ class TestMilvusIntegration:
                 [
                     "to-milvus",
                     "import",
-                    "test_collection",
-                    str(data_dir),
+                    "--collection-name", "test_collection",
+                    "--local-path", str(data_dir),
+                    "--s3-path", "test-import/",
+                    "--bucket", os.environ.get('MINIO_BUCKET', 'a-bucket'),
+                    "--endpoint-url", f"http://{os.environ.get('MINIO_HOST', '127.0.0.1')}:9000",
+                    "--access-key-id", os.environ.get('MINIO_ACCESS_KEY', 'minioadmin'),
+                    "--secret-access-key", os.environ.get('MINIO_SECRET_KEY', 'minioadmin'),
+                    "--uri", os.environ.get('MILVUS_URI', 'http://127.0.0.1:19530'),
                     "--wait",
-                    "--uri",
-                    "http://localhost:19530",
+                    "--no-verify-ssl",
                 ],
             )
 
@@ -572,7 +575,7 @@ class TestUtilityCommands:
         """Test clean command."""
         with cli_runner.isolated_filesystem():
             # Create some test data
-            test_dir = Path.home() / ".milvus-fake-data" / "data" / "test"
+            test_dir = Path.home() / ".milvus-ingest" / "data" / "test"
             test_dir.mkdir(parents=True, exist_ok=True)
             (test_dir / "data.parquet").touch()
 

@@ -5,7 +5,7 @@
 ## 基本语法
 
 ```bash
-milvus-fake-data upload LOCAL_PATH S3_PATH [OPTIONS]
+milvus-ingest upload LOCAL_PATH S3_PATH [OPTIONS]
 ```
 
 ## 必需参数
@@ -41,12 +41,12 @@ s3://test-bucket/experiments/
 
 ```bash
 # 使用默认 AWS 凭证
-milvus-fake-data upload ./data s3://my-aws-bucket/data/
+milvus-ingest upload ./data s3://my-aws-bucket/data/
 
 # 使用环境变量凭证
 export AWS_ACCESS_KEY_ID=your_access_key
 export AWS_SECRET_ACCESS_KEY=your_secret_key
-milvus-fake-data upload ./data s3://my-aws-bucket/data/
+milvus-ingest upload ./data s3://my-aws-bucket/data/
 ```
 
 ### MinIO 和其他 S3 兼容服务
@@ -56,15 +56,15 @@ milvus-fake-data upload ./data s3://my-aws-bucket/data/
 
 ```bash
 # MinIO 本地部署
-milvus-fake-data upload ./data s3://bucket/data/ \
+milvus-ingest upload ./data s3://bucket/data/ \
   --endpoint-url http://localhost:9000
 
 # MinIO 远程部署
-milvus-fake-data upload ./data s3://bucket/data/ \
+milvus-ingest upload ./data s3://bucket/data/ \
   --endpoint-url http://minio.example.com:9000
 
 # 其他 S3 兼容服务
-milvus-fake-data upload ./data s3://bucket/data/ \
+milvus-ingest upload ./data s3://bucket/data/ \
   --endpoint-url https://s3.example.com
 ```
 
@@ -74,7 +74,7 @@ milvus-fake-data upload ./data s3://bucket/data/ \
 指定访问密钥 ID
 
 ```bash
-milvus-fake-data upload ./data s3://bucket/data/ \
+milvus-ingest upload ./data s3://bucket/data/ \
   --access-key-id AKIAIOSFODNN7EXAMPLE
 ```
 
@@ -82,14 +82,14 @@ milvus-fake-data upload ./data s3://bucket/data/ \
 指定访问密钥
 
 ```bash
-milvus-fake-data upload ./data s3://bucket/data/ \
+milvus-ingest upload ./data s3://bucket/data/ \
   --secret-access-key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 ```
 
 ### 组合认证示例
 ```bash
 # MinIO 完整认证
-milvus-fake-data upload ./ecommerce_data s3://milvus-data/ecommerce/ \
+milvus-ingest upload ./ecommerce_data s3://milvus-data/ecommerce/ \
   --endpoint-url http://localhost:9000 \
   --access-key-id minioadmin \
   --secret-access-key minioadmin
@@ -102,7 +102,7 @@ milvus-fake-data upload ./ecommerce_data s3://milvus-data/ecommerce/ \
 
 ```bash
 # 本地 MinIO 不使用 SSL
-milvus-fake-data upload ./data s3://bucket/data/ \
+milvus-ingest upload ./data s3://bucket/data/ \
   --endpoint-url http://localhost:9000 \
   --no-verify-ssl
 ```
@@ -112,7 +112,7 @@ milvus-fake-data upload ./data s3://bucket/data/ \
 
 ```bash
 # 指定 AWS 区域
-milvus-fake-data upload ./data s3://my-bucket/data/ \
+milvus-ingest upload ./data s3://my-bucket/data/ \
   --region us-west-2
 ```
 
@@ -121,15 +121,15 @@ milvus-fake-data upload ./data s3://my-bucket/data/ \
 
 ```bash
 # 标准存储
-milvus-fake-data upload ./data s3://bucket/data/ \
+milvus-ingest upload ./data s3://bucket/data/ \
   --storage-class STANDARD
 
 # 低频访问存储  
-milvus-fake-data upload ./data s3://bucket/data/ \
+milvus-ingest upload ./data s3://bucket/data/ \
   --storage-class STANDARD_IA
 
 # 归档存储
-milvus-fake-data upload ./data s3://bucket/data/ \
+milvus-ingest upload ./data s3://bucket/data/ \
   --storage-class GLACIER
 ```
 
@@ -139,13 +139,13 @@ milvus-fake-data upload ./data s3://bucket/data/ \
 
 ```bash
 # 生成数据
-milvus-fake-data generate --builtin ecommerce --rows 100000 --out ./ecommerce_data
+milvus-ingest generate --builtin ecommerce --rows 100000 --out ./ecommerce_data
 
 # 上传到 AWS S3（使用默认凭证）
-milvus-fake-data upload ./ecommerce_data s3://my-production-bucket/datasets/ecommerce/
+milvus-ingest upload ./ecommerce_data s3://my-production-bucket/datasets/ecommerce/
 
 # 上传到 AWS S3（指定凭证和区域）
-milvus-fake-data upload ./ecommerce_data s3://my-production-bucket/datasets/ecommerce/ \
+milvus-ingest upload ./ecommerce_data s3://my-production-bucket/datasets/ecommerce/ \
   --access-key-id AKIAIOSFODNN7EXAMPLE \
   --secret-access-key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY \
   --region us-east-1 \
@@ -156,17 +156,17 @@ milvus-fake-data upload ./ecommerce_data s3://my-production-bucket/datasets/ecom
 
 ```bash
 # 生成测试数据
-milvus-fake-data generate --builtin simple --rows 10000 --out ./test_data
+milvus-ingest generate --builtin simple --rows 10000 --out ./test_data
 
 # 上传到本地 MinIO
-milvus-fake-data upload ./test_data s3://test-bucket/simple-data/ \
+milvus-ingest upload ./test_data s3://test-bucket/simple-data/ \
   --endpoint-url http://localhost:9000 \
   --access-key-id minioadmin \
   --secret-access-key minioadmin \
   --no-verify-ssl
 
 # 上传到远程 MinIO
-milvus-fake-data upload ./test_data s3://production-bucket/datasets/ \
+milvus-ingest upload ./test_data s3://production-bucket/datasets/ \
   --endpoint-url https://minio.company.com \
   --access-key-id prod_access_key \
   --secret-access-key prod_secret_key
@@ -178,13 +178,13 @@ milvus-fake-data upload ./test_data s3://production-bucket/datasets/ \
 # 生成多个数据集
 schemas=("simple" "ecommerce" "documents" "users")
 for schema in "${schemas[@]}"; do
-  milvus-fake-data generate --builtin $schema --rows 50000 --out ./${schema}_data
+  milvus-ingest generate --builtin $schema --rows 50000 --out ./${schema}_data
 done
 
 # 批量上传
 for schema in "${schemas[@]}"; do
   echo "上传 $schema 数据集..."
-  milvus-fake-data upload ./${schema}_data s3://datasets/${schema}/ \
+  milvus-ingest upload ./${schema}_data s3://datasets/${schema}/ \
     --endpoint-url http://minio:9000 \
     --access-key-id minioadmin \
     --secret-access-key minioadmin
@@ -208,7 +208,7 @@ export MINIO_BUCKET=milvus-data
 source .env
 
 # 简化上传命令
-milvus-fake-data upload ./data s3://$MINIO_BUCKET/data/ \
+milvus-ingest upload ./data s3://$MINIO_BUCKET/data/ \
   --endpoint-url $MINIO_ENDPOINT
 ```
 
@@ -225,7 +225,7 @@ milvus-fake-data upload ./data s3://$MINIO_BUCKET/data/ \
 ### 输出信息
 
 ```bash
-$ milvus-fake-data upload ./data s3://bucket/data/ --endpoint-url http://minio:9000
+$ milvus-ingest upload ./data s3://bucket/data/ --endpoint-url http://minio:9000
 
 [INFO] 正在验证本地路径: ./data
 [INFO] 发现 3 个文件需要上传 (总大小: 245.7 MB)
@@ -333,10 +333,10 @@ chmod 755 ./data/
 ### 2. 文件优化
 ```bash
 # 生成时使用 Parquet 格式（更高压缩率）
-milvus-fake-data generate --format parquet
+milvus-ingest generate --format parquet
 
 # 控制文件大小便于传输
-milvus-fake-data generate --max-file-size 256  # 256MB 每文件
+milvus-ingest generate --max-file-size 256  # 256MB 每文件
 ```
 
 ### 3. 并发优化
@@ -347,16 +347,16 @@ milvus-fake-data generate --max-file-size 256  # 256MB 每文件
 ### 1. 完整数据管道
 ```bash
 # 步骤1: 生成数据
-milvus-fake-data generate --builtin ecommerce --rows 1000000 --out ./ecommerce
+milvus-ingest generate --builtin ecommerce --rows 1000000 --out ./ecommerce
 
 # 步骤2: 上传数据
-milvus-fake-data upload ./ecommerce s3://milvus-data/ecommerce/ \
+milvus-ingest upload ./ecommerce s3://milvus-data/ecommerce/ \
   --endpoint-url http://minio:9000 \
   --access-key-id minioadmin \
   --secret-access-key minioadmin
 
 # 步骤3: 导入到 Milvus（见 to-milvus 命令）
-milvus-fake-data to-milvus import ecommerce_products s3://milvus-data/ecommerce/
+milvus-ingest to-milvus import ecommerce_products s3://milvus-data/ecommerce/
 ```
 
 ### 2. 脚本化批处理
@@ -372,10 +372,10 @@ for schema in "${SCHEMAS[@]}"; do
     echo "处理 $schema..."
     
     # 生成数据
-    milvus-fake-data generate --builtin $schema --rows 100000 --out ./${schema}_data
+    milvus-ingest generate --builtin $schema --rows 100000 --out ./${schema}_data
     
     # 上传数据
-    milvus-fake-data upload ./${schema}_data ${BUCKET}/${schema}/ \
+    milvus-ingest upload ./${schema}_data ${BUCKET}/${schema}/ \
         --endpoint-url $ENDPOINT \
         --access-key-id $MINIO_ACCESS_KEY \
         --secret-access-key $MINIO_SECRET_KEY
@@ -426,7 +426,7 @@ s3://milvus-data/staging/user_profiles/
 export LOGURU_LEVEL=INFO
 
 # 记录上传操作
-milvus-fake-data upload ./data s3://bucket/data/ 2>&1 | tee upload.log
+milvus-ingest upload ./data s3://bucket/data/ 2>&1 | tee upload.log
 ```
 
 ## 相关命令

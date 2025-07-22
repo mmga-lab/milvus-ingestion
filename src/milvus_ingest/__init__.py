@@ -1,5 +1,5 @@
-"""Milvus Fake Data package.
-Generate mock data based on Milvus collection schema.
+"""Milvus Ingest package.
+High-performance data ingestion tool for Milvus vector database.
 """
 
 from importlib.metadata import PackageNotFoundError, version
@@ -11,7 +11,7 @@ except PackageNotFoundError:  # pragma: no cover
 
 from .exceptions import (
     GenerationError,
-    MilvusFakeDataError,
+    MilvusIngestError,
     SchemaError,
     UnsupportedFieldTypeError,
 )
@@ -20,7 +20,7 @@ from .generator import generate_mock_data
 __all__ = [
     "__version__",
     "generate_mock_data",
-    "MilvusFakeDataError",
+    "MilvusIngestError",
     "SchemaError",
     "UnsupportedFieldTypeError",
     "GenerationError",

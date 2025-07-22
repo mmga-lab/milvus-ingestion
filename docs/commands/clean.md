@@ -5,7 +5,7 @@
 ## 基本语法
 
 ```bash
-milvus-fake-data clean [OPTIONS]
+milvus-ingest clean [OPTIONS]
 ```
 
 ## 清理范围
@@ -26,7 +26,7 @@ milvus-fake-data clean [OPTIONS]
    - 错误日志和调试信息
 
 ### 不会清理的内容
-- 用户自定义的模式文件 (`~/.milvus-fake-data/schemas/`)
+- 用户自定义的模式文件 (`~/.milvus-ingest/schemas/`)
 - 系统配置文件
 - 手动创建的非标准目录
 
@@ -37,10 +37,10 @@ milvus-fake-data clean [OPTIONS]
 
 ```bash
 # 交互式清理（默认）
-milvus-fake-data clean
+milvus-ingest clean
 
 # 自动清理，无需确认
-milvus-fake-data clean --yes
+milvus-ingest clean --yes
 ```
 
 ### --target PATH
@@ -48,10 +48,10 @@ milvus-fake-data clean --yes
 
 ```bash
 # 清理特定目录
-milvus-fake-data clean --target ./old_data
+milvus-ingest clean --target ./old_data
 
 # 清理多个目录
-milvus-fake-data clean --target ./data1 --target ./data2
+milvus-ingest clean --target ./data1 --target ./data2
 ```
 
 ### --recursive
@@ -59,10 +59,10 @@ milvus-fake-data clean --target ./data1 --target ./data2
 
 ```bash
 # 递归清理当前目录及子目录
-milvus-fake-data clean --recursive
+milvus-ingest clean --recursive
 
 # 递归清理指定目录
-milvus-fake-data clean --target ./datasets --recursive
+milvus-ingest clean --target ./datasets --recursive
 ```
 
 ### --dry-run
@@ -70,10 +70,10 @@ milvus-fake-data clean --target ./datasets --recursive
 
 ```bash
 # 查看会清理哪些文件
-milvus-fake-data clean --dry-run
+milvus-ingest clean --dry-run
 
 # 预览特定目录的清理
-milvus-fake-data clean --target ./data --dry-run
+milvus-ingest clean --target ./data --dry-run
 ```
 
 ### --include-cache
@@ -81,7 +81,7 @@ milvus-fake-data clean --target ./data --dry-run
 
 ```bash
 # 清理包括缓存
-milvus-fake-data clean --include-cache --yes
+milvus-ingest clean --include-cache --yes
 ```
 
 ## 使用示例
@@ -90,7 +90,7 @@ milvus-fake-data clean --include-cache --yes
 
 ```bash
 # 交互式清理（推荐）
-milvus-fake-data clean
+milvus-ingest clean
 ```
 
 输出示例：
@@ -117,14 +117,14 @@ milvus-fake-data clean
 
 ```bash
 # 脚本中使用，跳过确认
-milvus-fake-data clean --yes
+milvus-ingest clean --yes
 ```
 
 ### 3. 预览清理内容
 
 ```bash
 # 查看会清理什么，但不实际清理
-milvus-fake-data clean --dry-run
+milvus-ingest clean --dry-run
 ```
 
 输出示例：
@@ -141,17 +141,17 @@ milvus-fake-data clean --dry-run
 └── ./generation.log         (1.5 MB)
 
 [DRY RUN] 总计将释放: 44.0 MB
-[DRY RUN] 实际清理请运行: milvus-fake-data clean --yes
+[DRY RUN] 实际清理请运行: milvus-ingest clean --yes
 ```
 
 ### 4. 清理特定目录
 
 ```bash
 # 只清理指定的数据目录
-milvus-fake-data clean --target ./old_experiment_data --yes
+milvus-ingest clean --target ./old_experiment_data --yes
 
 # 清理多个特定目录
-milvus-fake-data clean \
+milvus-ingest clean \
   --target ./test_data_1 \
   --target ./test_data_2 \
   --target ./experiments \
@@ -162,7 +162,7 @@ milvus-fake-data clean \
 
 ```bash
 # 包含缓存的完整清理
-milvus-fake-data clean --include-cache --recursive --yes
+milvus-ingest clean --include-cache --recursive --yes
 ```
 
 ## 清理策略
@@ -172,22 +172,22 @@ milvus-fake-data clean --include-cache --recursive --yes
 # 每日清理策略（脚本）
 #!/bin/bash
 echo "执行每日清理..."
-milvus-fake-data clean --yes
+milvus-ingest clean --yes
 echo "清理完成"
 ```
 
 ### 实验环境清理
 ```bash
 # 实验结束后清理
-milvus-fake-data clean --target ./experiment_* --recursive --yes
+milvus-ingest clean --target ./experiment_* --recursive --yes
 ```
 
 ### 生产环境清理
 ```bash
 # 谨慎清理，先预览
-milvus-fake-data clean --dry-run
+milvus-ingest clean --dry-run
 # 确认后再执行
-milvus-fake-data clean --yes
+milvus-ingest clean --yes
 ```
 
 ## 高级用法
@@ -203,13 +203,13 @@ function run_experiment() {
     echo "开始实验: $schema"
     
     # 生成数据
-    milvus-fake-data generate --builtin $schema --rows $rows --out ./exp_${schema}
+    milvus-ingest generate --builtin $schema --rows $rows --out ./exp_${schema}
     
     # 测试导入
-    milvus-fake-data to-milvus insert ./exp_${schema} --collection-name test_${schema}
+    milvus-ingest to-milvus insert ./exp_${schema} --collection-name test_${schema}
     
     # 清理数据
-    milvus-fake-data clean --target ./exp_${schema} --yes
+    milvus-ingest clean --target ./exp_${schema} --yes
     
     echo "实验完成: $schema"
 }
@@ -235,7 +235,7 @@ find . -maxdepth 1 -type d -name "*_data" -mtime +7 -exec echo "发现旧目录:
 find . -maxdepth 1 -type d -name "*_data" -mtime +7 -exec rm -rf {} \;
 
 # 清理工具生成的文件
-milvus-fake-data clean --yes
+milvus-ingest clean --yes
 
 # 清理大于100MB的临时文件
 find . -name "*.tmp" -size +100M -delete
@@ -257,12 +257,12 @@ fi
 
 # 预览清理内容
 echo "预览清理内容:"
-milvus-fake-data clean --dry-run
+milvus-ingest clean --dry-run
 
 # 确认清理
 read -p "确认执行清理? (y/N): " confirm
 if [[ $confirm == [yY] ]]; then
-    milvus-fake-data clean --yes
+    milvus-ingest clean --yes
     echo "清理完成"
 else
     echo "清理已取消"
@@ -283,7 +283,7 @@ fi
 - `*.tmp` - 各种临时文件
 
 ### 缓存文件
-- `~/.milvus-fake-data/cache/` - 工具缓存目录
+- `~/.milvus-ingest/cache/` - 工具缓存目录
 - 性能分析文件
 - 编译缓存
 
@@ -305,7 +305,7 @@ ls -la ./data/
 chmod -R 755 ./data/
 
 # 或使用 sudo (谨慎)
-sudo milvus-fake-data clean --yes
+sudo milvus-ingest clean --yes
 ```
 
 #### 2. 文件被占用
@@ -319,7 +319,7 @@ sudo milvus-fake-data clean --yes
 lsof +D ./data/
 
 # 停止相关进程后重试
-milvus-fake-data clean --yes
+milvus-ingest clean --yes
 ```
 
 #### 3. 磁盘空间不足
@@ -330,7 +330,7 @@ milvus-fake-data clean --yes
 **解决方案:**
 ```bash
 # 强制清理释放空间
-milvus-fake-data clean --yes --include-cache
+milvus-ingest clean --yes --include-cache
 
 # 手动删除大文件
 find . -size +1G -type f -delete
@@ -358,7 +358,7 @@ find . -size +1G -type f -delete
 ### 1. 定期清理
 ```bash
 # 添加到 crontab 每日清理
-# 0 2 * * * cd /path/to/workspace && milvus-fake-data clean --yes
+# 0 2 * * * cd /path/to/workspace && milvus-ingest clean --yes
 ```
 
 ### 2. 清理前备份重要数据
@@ -367,7 +367,7 @@ find . -size +1G -type f -delete
 cp -r ./important_experiment_data ./backups/
 
 # 然后清理
-milvus-fake-data clean --yes
+milvus-ingest clean --yes
 ```
 
 ### 3. 使用 .gitignore 避免版本控制
@@ -382,7 +382,7 @@ generation.log
 ### 4. 项目结束时完整清理
 ```bash
 # 项目结束清理脚本
-milvus-fake-data clean --include-cache --recursive --yes
+milvus-ingest clean --include-cache --recursive --yes
 rm -rf ./experiments/
 rm -rf ./temp_data/
 echo "项目环境已重置"
