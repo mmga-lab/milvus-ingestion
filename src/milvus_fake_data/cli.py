@@ -652,11 +652,18 @@ def clean(yes: bool = False) -> None:
 
 
 @main.command()
-@click.argument(
-    "source",
+@click.option(
+    "--local-path",
+    required=True,
     type=click.Path(exists=True, dir_okay=True, file_okay=False, path_type=Path),
+    help="Local path to data directory to upload",
 )
-@click.argument("destination")
+@click.option(
+    "--s3-path", 
+    required=True,
+    type=str,
+    help="S3 destination path (e.g., s3://bucket/prefix/)",
+)
 @click.option(
     "--endpoint-url",
     help="S3-compatible endpoint URL (e.g., http://localhost:9000 for MinIO)",
@@ -687,8 +694,8 @@ def clean(yes: bool = False) -> None:
     help="Disable progress bar during upload",
 )
 def upload(
-    source: Path,
-    destination: str,
+    local_path: Path,
+    s3_path: str,
     endpoint_url: str | None = None,
     access_key_id: str | None = None,
     secret_access_key: str | None = None,
@@ -701,18 +708,18 @@ def upload(
     \b
     Examples:
         # Upload to AWS S3
-        milvus-fake-data upload ./output s3://my-bucket/data/
+        milvus-fake-data upload --local-path ./output --s3-path s3://my-bucket/data/
 
         # Upload to MinIO
-        milvus-fake-data upload ./output s3://my-bucket/data/ --endpoint-url http://localhost:9000
+        milvus-fake-data upload --local-path ./output --s3-path s3://my-bucket/data/ --endpoint-url http://localhost:9000
 
         # With explicit credentials
-        milvus-fake-data upload ./output s3://my-bucket/data/ \\
+        milvus-fake-data upload --local-path ./output --s3-path s3://my-bucket/data/ \\
             --access-key-id mykey --secret-access-key mysecret
     """
     try:
         # Parse S3 URL
-        bucket, prefix = parse_s3_url(destination)
+        bucket, prefix = parse_s3_url(s3_path)
 
         # Create uploader
         uploader = S3Uploader(
@@ -729,9 +736,9 @@ def upload(
             return
 
         # Upload files
-        click.echo(f"Uploading {source} to s3://{bucket}/{prefix}")
+        click.echo(f"Uploading {local_path} to s3://{bucket}/{prefix}")
         result = uploader.upload_directory(
-            local_path=source,
+            local_path=local_path,
             bucket=bucket,
             prefix=prefix,
             show_progress=not no_progress,
@@ -756,7 +763,7 @@ def upload(
         ctx = click.get_current_context()
         click.echo(ctx.get_help())
     except Exception as e:
-        log_error_with_context(e, {"source": str(source), "destination": destination})
+        log_error_with_context(e, {"local_path": str(local_path), "s3_path": s3_path})
         display_error(f"Upload failed: {e}")
 
 

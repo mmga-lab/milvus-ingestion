@@ -97,11 +97,11 @@ milvus-fake-data schema help                   # Schema format help
 # Utility commands
 milvus-fake-data clean                         # Clean up generated files
 
-# Upload to S3/MinIO
-milvus-fake-data upload ./output s3://bucket/prefix/              # Upload to AWS S3
-milvus-fake-data upload ./output s3://bucket/prefix/ --endpoint-url http://localhost:9000  # Upload to MinIO
-milvus-fake-data upload ./output s3://bucket/prefix/ --no-verify-ssl  # Disable SSL verification
-milvus-fake-data upload ./output s3://bucket/prefix/ --access-key-id KEY --secret-access-key SECRET  # With credentials
+# Upload to S3/MinIO (standalone upload, useful for separate upload/import workflow)
+milvus-fake-data upload --local-path ./output --s3-path s3://bucket/prefix/              # Upload to AWS S3
+milvus-fake-data upload --local-path ./output --s3-path s3://bucket/prefix/ --endpoint-url http://localhost:9000  # Upload to MinIO
+milvus-fake-data upload --local-path ./output --s3-path s3://bucket/prefix/ --no-verify-ssl  # Disable SSL verification
+milvus-fake-data upload --local-path ./output --s3-path s3://bucket/prefix/ --access-key-id KEY --secret-access-key SECRET  # With credentials
 
 # Send data to Milvus
 # Direct insert to Milvus (reads local files and creates collection)
@@ -383,21 +383,64 @@ milvus-fake-data to-milvus import --local-path ./output/ --s3-path data/ --bucke
 milvus-fake-data to-milvus import --collection-name my_collection --local-path ./output/ --s3-path data/ --bucket my-bucket --endpoint-url http://minio:9000 --wait --timeout 300
 ```
 
-**Import Methods Comparison:**
+**Data Import Workflows:**
 
-1. **Bulk Import (`to-milvus import`)**: 
+### Option 1: One-Step Import (Recommended for most users)
+```bash
+# Generate data
+milvus-fake-data generate --builtin simple --rows 1000000 --out ./output
+
+# Upload and import in one step
+milvus-fake-data to-milvus import \
+  --local-path ./output/ \
+  --s3-path data/ \
+  --bucket my-bucket \
+  --endpoint-url http://minio:9000 \
+  --wait
+```
+
+### Option 2: Separate Upload and Import
+```bash
+# Generate data
+milvus-fake-data generate --builtin simple --rows 1000000 --out ./output
+
+# Step 1: Upload to S3/MinIO
+milvus-fake-data upload ./output s3://my-bucket/data/ --endpoint-url http://minio:9000
+
+# Step 2: Import (for pre-uploaded files - would need separate import command)
+# Note: This workflow is useful when you need to upload once and import multiple times
+```
+
+### Option 3: Direct Insert (No S3/MinIO)
+```bash
+# Generate data
+milvus-fake-data generate --builtin simple --rows 100000 --out ./output
+
+# Direct insert to Milvus
+milvus-fake-data to-milvus insert ./output --uri http://milvus:19530
+```
+
+**Method Comparison:**
+
+1. **One-Step Import (`to-milvus import`)**: 
    - **Automatically uploads files to MinIO/S3 then imports**
    - Uses Milvus bulk import API for high-performance imports
    - Suitable for very large datasets (millions of rows)
    - Asynchronous operation with job tracking
    - **Auto-collection creation from meta.json (same as insert)**
-   - **Single command replaces the need for separate upload + import**
+   - **Most convenient for typical workflows**
 
 2. **Direct Insert (`to-milvus insert`)**:
    - Reads data directly from local files
    - Creates collection and inserts data in one operation
    - Suitable for smaller to medium datasets
    - Synchronous operation with progress bar
+   - **No S3/MinIO required**
+
+3. **Separate Upload (`upload`)**:
+   - Standalone upload to S3/MinIO
+   - **Useful for batch operations or when upload/import happen at different times**
+   - Can be combined with external import tools or processes
 
 **Important Notes:**
 - Files must be already uploaded to MinIO/S3 before using bulk import
