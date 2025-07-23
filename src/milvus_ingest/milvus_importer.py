@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from pymilvus import DataType, MilvusClient
+from pymilvus import MilvusClient
 from pymilvus.bulk_writer import bulk_import, get_import_progress, list_import_jobs
 from rich.console import Console
 from rich.progress import (
@@ -19,6 +19,7 @@ from rich.progress import (
 )
 
 from .logging_config import get_logger
+from .milvus_schema_builder import MilvusSchemaBuilder
 
 
 class MilvusBulkImporter:
@@ -50,122 +51,13 @@ class MilvusBulkImporter:
                 token=token,
                 db_name=db_name,
             )
+            # Initialize schema builder
+            self.schema_builder = MilvusSchemaBuilder(self.client)
             self.logger.info(f"Connected to Milvus at {uri}")
         except Exception as e:
             self.logger.error(f"Failed to connect to Milvus: {e}")
             raise
 
-    def _get_milvus_datatype(self, field_type: str) -> DataType:
-        """Map field type string to Milvus DataType."""
-        type_mapping = {
-            "Bool": DataType.BOOL,
-            "Int8": DataType.INT8,
-            "Int16": DataType.INT16,
-            "Int32": DataType.INT32,
-            "Int64": DataType.INT64,
-            "Float": DataType.FLOAT,
-            "Double": DataType.DOUBLE,
-            "VarChar": DataType.VARCHAR,
-            "String": DataType.VARCHAR,
-            "JSON": DataType.JSON,
-            "Array": DataType.ARRAY,
-            "FloatVector": DataType.FLOAT_VECTOR,
-            "BinaryVector": DataType.BINARY_VECTOR,
-            "Float16Vector": DataType.FLOAT16_VECTOR,
-            "BFloat16Vector": DataType.BFLOAT16_VECTOR,
-            "SparseFloatVector": DataType.SPARSE_FLOAT_VECTOR,
-        }
-        if field_type not in type_mapping:
-            raise ValueError(f"Unsupported field type: {field_type}")
-        return type_mapping[field_type]
-
-    def _create_schema(self, metadata: dict[str, Any]) -> Any:
-        """Create Milvus collection schema from metadata."""
-        enable_dynamic = metadata["schema"].get("enable_dynamic_field", False)
-        schema = self.client.create_schema(enable_dynamic_field=enable_dynamic)
-
-        for field_info in metadata["schema"]["fields"]:
-            field_name = field_info["name"]
-            field_type = field_info["type"]
-            milvus_type = self._get_milvus_datatype(field_type)
-
-            # Add field to schema
-            if field_type in ["VarChar", "String"]:
-                schema.add_field(
-                    field_name=field_name,
-                    datatype=milvus_type,
-                    max_length=field_info.get("max_length", 65535),
-                    is_primary=field_info.get("is_primary", False),
-                    auto_id=field_info.get("auto_id", False),
-                )
-            elif "Vector" in field_type:
-                # SparseFloatVector doesn't need dim parameter
-                if field_type == "SparseFloatVector":
-                    schema.add_field(
-                        field_name=field_name,
-                        datatype=milvus_type,
-                        is_primary=field_info.get("is_primary", False),
-                        auto_id=field_info.get("auto_id", False),
-                    )
-                else:
-                    schema.add_field(
-                        field_name=field_name,
-                        datatype=milvus_type,
-                        dim=field_info.get("dim"),
-                        is_primary=field_info.get("is_primary", False),
-                        auto_id=field_info.get("auto_id", False),
-                    )
-            elif field_type == "Array":
-                kwargs = {
-                    "field_name": field_name,
-                    "datatype": milvus_type,
-                    "max_capacity": field_info.get("max_capacity"),
-                    "element_type": self._get_milvus_datatype(
-                        field_info.get("element_type")
-                    ),
-                    "is_primary": field_info.get("is_primary", False),
-                    "auto_id": field_info.get("auto_id", False),
-                }
-                # Add max_length for string arrays
-                if field_info.get("element_type") in ["VarChar", "String"]:
-                    kwargs["max_length"] = field_info.get("max_length", 65535)
-                schema.add_field(**kwargs)
-            else:
-                schema.add_field(
-                    field_name=field_name,
-                    datatype=milvus_type,
-                    is_primary=field_info.get("is_primary", False),
-                    auto_id=field_info.get("auto_id", False),
-                )
-
-        return schema
-
-    def _create_index_params(self, metadata: dict[str, Any]) -> Any:
-        """Create index parameters for vector fields."""
-        index_params = self.client.prepare_index_params()
-
-        for field_info in metadata["schema"]["fields"]:
-            field_name = field_info["name"]
-            field_type = field_info["type"]
-
-            if "Vector" in field_type and field_type != "SparseFloatVector":
-                # Use appropriate index based on vector dimension
-                dim = field_info.get("dim", 0)
-                if dim <= 2048:
-                    index_params.add_index(
-                        field_name=field_name,
-                        index_type="FLAT",
-                        metric_type="L2",
-                    )
-                else:
-                    index_params.add_index(
-                        field_name=field_name,
-                        index_type="IVF_FLAT",
-                        metric_type="L2",
-                        params={"nlist": 128},
-                    )
-
-        return index_params
 
     def ensure_collection_exists(
         self,
@@ -194,16 +86,10 @@ class MilvusBulkImporter:
 
         # Create collection if we have metadata
         if schema_metadata:
-            schema = self._create_schema(schema_metadata)
-            index_params = self._create_index_params(schema_metadata)
-
-            self.client.create_collection(
-                collection_name=collection_name,
-                schema=schema,
-                index_params=index_params,
+            # Use unified schema builder to create collection
+            return self.schema_builder.create_collection_with_schema(
+                collection_name, schema_metadata, drop_if_exists=False
             )
-            self.logger.info(f"Created collection: {collection_name}")
-            return True
         else:
             raise ValueError(
                 f"Collection '{collection_name}' does not exist and no schema metadata provided"
@@ -277,11 +163,9 @@ class MilvusBulkImporter:
                 metadata = self._try_load_metadata(files)
 
                 if metadata:
-                    # Use metadata to create collection if needed
-                    self.ensure_collection_exists(
-                        collection_name=collection_name,
-                        schema_metadata=metadata,
-                        drop_if_exists=drop_if_exists,
+                    # Use unified schema builder to create collection if needed
+                    self.schema_builder.create_collection_with_schema(
+                        collection_name, metadata, drop_if_exists=drop_if_exists
                     )
                 else:
                     # Just check if collection exists

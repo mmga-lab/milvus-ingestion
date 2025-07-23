@@ -57,6 +57,12 @@ class ArrayElementType(str, Enum):
     STRING = "String"
 
 
+class FunctionType(str, Enum):
+    """Supported Milvus function types."""
+
+    BM25 = "BM25"
+
+
 class DynamicFieldSchema(BaseModel):
     """Schema definition for dynamic fields that should be generated."""
 
@@ -179,7 +185,6 @@ class FieldSchema(BaseModel):
         default=None,
         description="Default value for scalar fields when no value is provided during insert",
     )
-
 
     # Numeric field constraints
     min: int | float | None = Field(
@@ -371,7 +376,6 @@ class FieldSchema(BaseModel):
             # Validate default value type matches field type
             self._validate_default_value_type()
 
-
         return self
 
     def _validate_default_value_type(self) -> None:
@@ -443,6 +447,56 @@ class FieldSchema(BaseModel):
                 )
 
 
+class FunctionSchema(BaseModel):
+    """Schema definition for Milvus functions (e.g., BM25 for full-text search)."""
+
+    name: str = Field(..., description="Function name", min_length=1, max_length=255)
+    type: FunctionType = Field(..., description="Function type (e.g., BM25)")
+    input_field_names: list[str] = Field(
+        ...,
+        description="List of input field names that this function processes",
+        min_length=1,
+    )
+    output_field_names: list[str] = Field(
+        ...,
+        description="List of output field names that this function generates",
+        min_length=1,
+    )
+    params: dict[str, Any] = Field(
+        default_factory=dict, description="Additional function parameters"
+    )
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """Validate function name."""
+        if not v.replace("_", "").isalnum():
+            raise ValueError(
+                f"Function name '{v}' is invalid. Function names must contain only letters, numbers, and underscores."
+            )
+        return v
+
+    @model_validator(mode="after")
+    def validate_function(self) -> FunctionSchema:
+        """Validate function-specific constraints."""
+        # BM25 specific validations
+        if self.type == FunctionType.BM25:
+            # BM25 accepts only one input field
+            if len(self.input_field_names) != 1:
+                raise ValueError(
+                    f"BM25 function '{self.name}' must have exactly one input field, "
+                    f"got {len(self.input_field_names)}: {', '.join(self.input_field_names)}"
+                )
+            # BM25 produces only one output field
+            if len(self.output_field_names) != 1:
+                raise ValueError(
+                    f"BM25 function '{self.name}' must have exactly one output field, "
+                    f"got {len(self.output_field_names)}: {', '.join(self.output_field_names)}"
+                )
+
+        return self
+
+
 class CollectionSchema(BaseModel):
     """Pydantic model for collection schema validation."""
 
@@ -465,6 +519,10 @@ class CollectionSchema(BaseModel):
     dynamic_fields: list[DynamicFieldSchema] | None = Field(
         default=None,
         description="Dynamic fields to generate when enable_dynamic_field is True",
+    )
+    functions: list[FunctionSchema] | None = Field(
+        default=None,
+        description="Functions to apply to fields (e.g., BM25 for full-text search)",
     )
 
     @field_validator("collection_name")
@@ -575,6 +633,75 @@ class CollectionSchema(BaseModel):
                     "Dynamic field names must be different from regular field names."
                 )
 
+        # Validate functions
+        if self.functions is not None:
+            # Get all field names for validation
+            all_field_names = {f.name for f in self.fields}
+            function_output_fields: set[str] = set()
+
+            for func in self.functions:
+                # Validate input fields exist
+                for input_field in func.input_field_names:
+                    if input_field not in all_field_names:
+                        raise ValueError(
+                            f"Function '{func.name}' references non-existent input field '{input_field}'. "
+                            f"Available fields: {', '.join(sorted(all_field_names))}"
+                        )
+
+                # For BM25, output field must be defined in schema
+                # For other functions, output fields should not conflict
+                if func.type == FunctionType.BM25:
+                    # BM25 output field must already exist in schema
+                    for output_field in func.output_field_names:
+                        if output_field not in all_field_names:
+                            raise ValueError(
+                                f"BM25 function '{func.name}' output field '{output_field}' must be defined in fields. "
+                                f"Add a SparseFloatVector field named '{output_field}' to the schema."
+                            )
+                else:
+                    # Other function types create new fields, so check for conflicts
+                    for output_field in func.output_field_names:  # type: ignore[unreachable]
+                        if output_field in all_field_names:
+                            raise ValueError(
+                                f"Function '{func.name}' output field '{output_field}' conflicts with existing field. "
+                                f"Function output fields must have unique names."
+                            )
+                        if output_field in function_output_fields:
+                            raise ValueError(
+                                f"Multiple functions produce the same output field '{output_field}'. "
+                                f"Each function must produce uniquely named output fields."
+                            )
+                        function_output_fields.add(output_field)
+
+                # Additional BM25-specific validations
+                if func.type == FunctionType.BM25:
+                    # Validate input field is VARCHAR
+                    input_field_name = func.input_field_names[0]
+                    field_obj = next(
+                        f for f in self.fields if f.name == input_field_name
+                    )
+                    if field_obj.type not in {FieldType.VARCHAR, FieldType.STRING}:
+                        raise ValueError(
+                            f"BM25 function '{func.name}' input field '{input_field_name}' must be VarChar or String type, "
+                            f"got {field_obj.type}"
+                        )
+
+                    # Validate that a corresponding SparseFloatVector field exists
+                    output_field_name = func.output_field_names[0]
+                    # Find if there's a SparseFloatVector field for the output
+                    has_sparse_field = any(
+                        f.name == output_field_name
+                        and f.type == FieldType.SPARSE_FLOAT_VECTOR
+                        for f in self.fields
+                    )
+                    if not has_sparse_field:
+                        # Add a note that the output field should be defined as SparseFloatVector
+                        raise ValueError(
+                            f"BM25 function '{func.name}' requires output field '{output_field_name}' "
+                            f"to be defined as SparseFloatVector in the fields list.\n"
+                            f'Example: {{"name": "{output_field_name}", "type": "SparseFloatVector"}}'
+                        )
+
         return self
 
 
@@ -675,6 +802,29 @@ def get_schema_help() -> str:
 - `element_type`: Array element type (array only)
 - `max_capacity`: Array capacity (array only)
 
+## Functions
+
+Milvus supports functions that process fields to generate derived data automatically.
+
+### BM25 Function (Full-Text Search)
+The BM25 function enables full-text search by converting text fields into sparse vectors.
+
+```json
+{
+  "name": "text_bm25",
+  "type": "BM25",
+  "input_field_names": ["content"],
+  "output_field_names": ["content_sparse"],
+  "params": {}
+}
+```
+
+**Important Notes for BM25:**
+- Input field must be VarChar or String type
+- Output field must be defined as SparseFloatVector in the fields list
+- BM25 automatically generates sparse vectors during insert/import (no data needed for output field)
+- Only one input and one output field allowed per BM25 function
+
 ## Examples
 
 ### E-commerce Collection:
@@ -746,4 +896,31 @@ When `enable_dynamic_field` is true, you can insert additional fields:
   {"name": "vector", "type": "FloatVector", "dim": 384}
 ]
 ```
+
+### Full-Text Search Collection with BM25:
+```json
+{
+  "collection_name": "full_text_search",
+  "enable_dynamic_field": false,
+  "fields": [
+    {"name": "id", "type": "Int64", "is_primary": true, "auto_id": true},
+    {"name": "title", "type": "VarChar", "max_length": 500},
+    {"name": "content", "type": "VarChar", "max_length": 10000},
+    {"name": "content_sparse", "type": "SparseFloatVector"},
+    {"name": "embedding", "type": "FloatVector", "dim": 768}
+  ],
+  "functions": [
+    {
+      "name": "content_bm25",
+      "type": "BM25",
+      "input_field_names": ["content"],
+      "output_field_names": ["content_sparse"],
+      "params": {}
+    }
+  ]
+}
+```
+
+**Note:** When inserting data, you only need to provide values for `title`, `content`, and `embedding`.
+The `content_sparse` field will be automatically populated by the BM25 function.
 """.strip()

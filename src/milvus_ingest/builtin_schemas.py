@@ -149,6 +149,33 @@ BUILTIN_SCHEMAS = {
         "vector_dims": [768],
         "file": "default_values_demo.json",
     },
+    "full_text_search": {
+        "name": "Full-Text Search",
+        "description": "Full-text search with BM25 function and semantic embeddings for hybrid search",
+        "use_cases": [
+            "Full-text search",
+            "Hybrid search (BM25 + semantic)",
+            "Document retrieval",
+            "Keyword search",
+        ],
+        "fields_count": 11,
+        "vector_dims": [768],
+        "file": "full_text_search.json",
+    },
+    "bm25_demo": {
+        "name": "BM25 Function Demo",
+        "description": "Comprehensive demonstration of BM25 functions with multiple text fields for advanced full-text search",
+        "use_cases": [
+            "BM25 function demonstration",
+            "Multi-field full-text search",
+            "Hybrid search systems",
+            "Advanced text retrieval",
+            "Search relevance optimization",
+        ],
+        "fields_count": 17,
+        "vector_dims": [768],
+        "file": "bm25_demo.json",
+    },
 }
 
 
@@ -246,7 +273,9 @@ def get_schema_summary() -> str:
         summary += "# Use built-in schema\n"
         summary += f"milvus-ingest --builtin {schema_id} --rows 1000\n\n"
         summary += "# Save schema to file for customization\n"
-        summary += f"milvus-ingest --builtin {schema_id} --save-schema my_{schema_id}.json\n"
+        summary += (
+            f"milvus-ingest --builtin {schema_id} --save-schema my_{schema_id}.json\n"
+        )
         summary += "```\n\n"
         summary += "---\n\n"
 
