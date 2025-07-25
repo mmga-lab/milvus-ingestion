@@ -536,6 +536,12 @@ def generate(
     try:
         # High-performance parallel generator (default and only mode)
         logger.info("Using vectorized high-performance generator")
+        
+        # If progress bar will be shown, suppress INFO logs before starting generation
+        if not no_progress:
+            logger.info("Starting high-performance vectorized generator")
+            setup_logging(verbose=verbose, log_level="WARNING")
+        
         _save_with_high_performance_generator(
             schema_path,
             total_rows,
@@ -550,6 +556,7 @@ def generate(
             num_shards=num_shards,
             file_count=file_count,
             num_workers=num_workers,
+            verbose=verbose,
         )
         # Calculate directory size for logging (output is always a directory now)
         total_size = sum(
@@ -1186,6 +1193,7 @@ def _save_with_high_performance_generator(
     num_shards: int | None = None,
     file_count: int | None = None,
     num_workers: int | None = None,
+    verbose: bool = False,
 ) -> None:
     """Save using high-performance vectorized generator optimized for large-scale data."""
     import time
@@ -1198,17 +1206,16 @@ def _save_with_high_performance_generator(
     # Use larger batch size for high-performance mode
     optimized_batch_size = max(batch_size, 50000)
 
-    logger.info(
-        "Starting high-performance vectorized generator",
-        schema_file=str(schema_path),
-        output_dir=str(output_path),
-        format=fmt,
-        total_rows=total_rows,
-        batch_size=optimized_batch_size,
-    )
-
     try:
         if show_progress:
+            from rich.console import Console
+            
+            # Immediately set log level to WARNING before starting progress to suppress all INFO messages
+            setup_logging(
+                verbose=verbose, 
+                log_level="WARNING",  # Suppress INFO messages during progress
+            )
+            
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
@@ -1216,7 +1223,15 @@ def _save_with_high_performance_generator(
                 TaskProgressColumn(),
                 TimeRemainingColumn(),
                 TimeElapsedColumn(),
+                console=Console(stderr=True),  # Use stderr for progress output
             ) as progress:
+                # Reconfigure logging to use Rich's console for proper coordination
+                setup_logging(
+                    verbose=verbose, 
+                    log_level="WARNING",  # Keep WARNING level during progress
+                    rich_console=progress.console
+                )
+                
                 task = progress.add_task(
                     "Generating data with high-performance mode...", total=total_rows
                 )
@@ -1244,6 +1259,9 @@ def _save_with_high_performance_generator(
 
                 # Ensure progress shows 100% at the end
                 progress.update(task, completed=total_rows)
+            
+            # Restore original logging configuration after progress bar is closed
+            setup_logging(verbose=verbose, log_level="DEBUG" if verbose else "INFO")
             
             # Show completion summary after progress bar
             from rich.console import Console

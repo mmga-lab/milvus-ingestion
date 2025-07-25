@@ -45,6 +45,7 @@ def setup_logging(
     log_file: Path | str | None = None,
     log_level: str = "INFO",
     enable_file_logging: bool = True,
+    rich_console: Any = None,
 ) -> None:
     """Setup logging configuration.
 
@@ -53,6 +54,7 @@ def setup_logging(
         log_file: Custom log file path. If None, uses default location
         log_level: Minimum log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         enable_file_logging: Whether to enable file logging
+        rich_console: Rich Console instance to use for logging (for progress bar compatibility)
     """
     # Remove default logger first
     logger.remove()
@@ -61,14 +63,25 @@ def setup_logging(
     console_format = VERBOSE_FORMAT if verbose else NORMAL_FORMAT
     console_level = "DEBUG" if verbose else log_level
 
-    logger.add(
-        sys.stderr,
-        format=console_format,
-        level=console_level,
-        colorize=True,
-        backtrace=verbose,
-        diagnose=verbose,
-    )
+    # If rich_console is provided, use it for logging to avoid conflicts with progress bars
+    if rich_console is not None:
+        logger.add(
+            rich_console.print,
+            format=console_format,
+            level=console_level,
+            colorize=True,
+            backtrace=verbose,
+            diagnose=verbose,
+        )
+    else:
+        logger.add(
+            sys.stderr,
+            format=console_format,
+            level=console_level,
+            colorize=True,
+            backtrace=verbose,
+            diagnose=verbose,
+        )
 
     # File logging setup
     if enable_file_logging:

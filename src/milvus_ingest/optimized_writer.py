@@ -16,7 +16,7 @@ from ml_dtypes import bfloat16
 
 # Pure NumPy optimizations - consistently outperforms JIT for vector operations
 # Uses optimized BLAS libraries for multi-core CPU utilization
-logger.debug("Using NumPy vectorized operations with BLAS acceleration")
+# Note: Removed module-level debug log to avoid interfering with progress bars
 
 
 def _is_bm25_output_field(field_name: str, schema: dict[str, Any]) -> bool:
@@ -238,6 +238,16 @@ def _generate_single_file(
     import pyarrow.parquet as pq
     from loguru import logger
     from ml_dtypes import bfloat16
+    
+    # Configure logging for worker process to suppress INFO/DEBUG messages during progress display
+    # This prevents worker processes from interfering with progress bars
+    logger.remove()  # Remove default handler
+    logger.add(
+        __import__('sys').stderr,
+        level="WARNING",  # Only show warnings and errors from worker processes
+        format="{time:HH:mm:ss} | {level: <8} | {message}",
+        colorize=True,
+    )
     
     try:
         # Extract parameters
