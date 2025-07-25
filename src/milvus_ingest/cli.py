@@ -184,6 +184,12 @@ def main(ctx: click.Context, verbose: bool = False) -> None:
     type=int,
     help="Number of shards (VChannels) to simulate. Data distributed based on primary key hash.",
 )
+@click.option(
+    "--workers",
+    "num_workers", 
+    type=int,
+    help="Number of parallel worker processes for file generation. Default: CPU count.",
+)
 @click.pass_context
 def generate(
     ctx: click.Context,
@@ -203,6 +209,7 @@ def generate(
     file_count: int | None = None,
     num_partitions: int | None = None,
     num_shards: int | None = None,
+    num_workers: int | None = None,
 ) -> None:
     """Generate high-performance mock data from schema using optimized vectorized operations.
 
@@ -542,6 +549,7 @@ def generate(
             num_partitions=num_partitions,
             num_shards=num_shards,
             file_count=file_count,
+            num_workers=num_workers,
         )
         # Calculate directory size for logging (output is always a directory now)
         total_size = sum(
@@ -1177,6 +1185,7 @@ def _save_with_high_performance_generator(
     num_partitions: int | None = None,
     num_shards: int | None = None,
     file_count: int | None = None,
+    num_workers: int | None = None,
 ) -> None:
     """Save using high-performance vectorized generator optimized for large-scale data."""
     import time
@@ -1229,6 +1238,7 @@ def _save_with_high_performance_generator(
                     num_partitions=num_partitions,
                     num_shards=num_shards,
                     file_count=file_count,
+                    num_workers=num_workers,
                     progress_callback=update_progress,
                 )
 
@@ -1253,6 +1263,7 @@ def _save_with_high_performance_generator(
                 num_partitions=num_partitions,
                 num_shards=num_shards,
                 file_count=file_count,
+                num_workers=num_workers,
             )
 
         # Log performance metrics
