@@ -1227,7 +1227,11 @@ def generate_data_optimized(
         # Determine batch size for this file (respect both size and row constraints)
         current_batch_rows = min(remaining_rows, effective_max_rows_per_file)
 
-        logger.info(f"Generating file {file_index + 1}: {current_batch_rows:,} rows")
+        # Use debug level when progress callback is provided to avoid mixing with progress bar
+        if progress_callback:
+            logger.debug(f"Generating file {file_index + 1}: {current_batch_rows:,} rows")
+        else:
+            logger.info(f"Generating file {file_index + 1}: {current_batch_rows:,} rows")
 
         generation_start = time.time()
         data: dict[str, Any] = {}
@@ -1694,11 +1698,15 @@ def generate_data_optimized(
 
         all_files_created.append(str(output_file))
 
-        # Log progress
-        logger.info(
+        # Log progress - use debug level when progress callback is provided to avoid mixing with progress bar
+        completion_msg = (
             f"File {file_index + 1} completed: {current_batch_rows:,} rows "
             f"({current_batch_rows / batch_generation_time:.0f} rows/sec generation)"
         )
+        if progress_callback:
+            logger.debug(completion_msg)
+        else:
+            logger.info(completion_msg)
 
         # Update counters
         remaining_rows -= current_batch_rows
@@ -1806,9 +1814,11 @@ def generate_data_optimized(
     with open(meta_file, "w") as f:
         json.dump(serializable_metadata, f, indent=2)
 
-    logger.info(
-        f"Total generation completed: {rows:,} rows in {len(all_files_created)} file(s)"
-    )
-    logger.info(f"Total time: {total_time:.2f}s ({rows / total_time:.0f} rows/sec)")
+    # Show summary logs only when no progress callback (to avoid mixing with progress bar)
+    if not progress_callback:
+        logger.info(
+            f"Total generation completed: {rows:,} rows in {len(all_files_created)} file(s)"
+        )
+        logger.info(f"Total time: {total_time:.2f}s ({rows / total_time:.0f} rows/sec)")
 
     return all_files_created

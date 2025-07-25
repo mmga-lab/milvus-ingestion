@@ -1234,6 +1234,11 @@ def _save_with_high_performance_generator(
 
                 # Ensure progress shows 100% at the end
                 progress.update(task, completed=total_rows)
+            
+            # Show completion summary after progress bar
+            from rich.console import Console
+            console = Console()
+            console.print(f"\n✅ [bold green]Generation completed![/bold green] {len(files_created)} files created with {total_rows:,} rows total")
         else:
             # Run without progress bar
             files_created = generate_data_optimized(
