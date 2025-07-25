@@ -28,6 +28,105 @@ def _is_bm25_output_field(field_name: str, schema: dict[str, Any]) -> bool:
     return False
 
 
+def _find_partition_key_field(fields: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Find the partition key field in schema fields."""
+    for field in fields:
+        if field.get("is_partition_key", False):
+            return field
+    return None
+
+
+def _find_primary_key_field(fields: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Find the primary key field in schema fields."""
+    for field in fields:
+        if field.get("is_primary", False):
+            return field
+    return None
+
+
+def _calculate_shard_id(primary_key_value: Any, num_shards: int) -> int:
+    """Calculate shard ID based on primary key hash (simulates Milvus VChannel distribution)."""
+    return hash(str(primary_key_value)) % num_shards
+
+
+def _calculate_partition_id(partition_key_value: Any, num_partitions: int) -> int:
+    """Calculate partition ID based on partition key hash."""
+    return hash(str(partition_key_value)) % num_partitions
+
+
+def _parse_file_size(size_str: str) -> int:
+    """
+    Parse file size string to bytes.
+    
+    Args:
+        size_str: Size string like '10GB', '200MB', '1TB', or plain number (MB)
+        
+    Returns:
+        Size in bytes
+    """
+    if not size_str:
+        return 0
+        
+    size_str = str(size_str).upper().strip()
+    
+    # Handle different units
+    if size_str.endswith('TB'):
+        return int(float(size_str[:-2]) * 1024 * 1024 * 1024 * 1024)
+    elif size_str.endswith('GB'):
+        return int(float(size_str[:-2]) * 1024 * 1024 * 1024)
+    elif size_str.endswith('MB'):
+        return int(float(size_str[:-2]) * 1024 * 1024)
+    elif size_str.endswith('KB'):
+        return int(float(size_str[:-2]) * 1024)
+    elif size_str.endswith('B'):
+        return int(float(size_str[:-1]))
+    else:
+        # If no unit, assume it's MB (for backward compatibility)
+        try:
+            return int(float(size_str) * 1024 * 1024)
+        except ValueError:
+            raise ValueError(f"Invalid file size format: {size_str}. Use formats like '10GB', '200MB', or '256' (MB)")
+
+
+def _generate_partition_key_with_cardinality(
+    partition_field: dict[str, Any], num_rows: int, unique_count: int, pk_offset: int = 0
+) -> np.ndarray | list:
+    """
+    Generate partition key values with specified unique count.
+    
+    Args:
+        partition_field: Partition key field definition
+        num_rows: Number of rows to generate
+        unique_count: Number of unique values to generate
+        pk_offset: Offset for generation
+        
+    Returns:
+        Generated partition key values
+    """
+    field_type = partition_field["type"]
+    
+    if field_type == "Int64":
+        # Generate unique base values
+        base_value = (pk_offset + 1) * 100000  # Ensure different offsets produce different ranges
+        unique_values = np.arange(base_value, base_value + unique_count, dtype=np.int64)
+        
+        # Randomly select from unique values to fill all rows
+        partition_keys = np.random.choice(unique_values, size=num_rows)
+        return partition_keys
+        
+    elif field_type in ["VarChar", "String"]:
+        # Generate unique string values
+        unique_values = [f"partition_key_{pk_offset}_{i}" for i in range(unique_count)]
+        
+        # Randomly select from unique values to fill all rows
+        partition_keys = np.random.choice(unique_values, size=num_rows)
+        return partition_keys.tolist()
+    
+    else:
+        # Fallback to regular generation for unsupported types
+        return _generate_scalar_field_data(partition_field, num_rows, pk_offset)
+
+
 def _generate_dynamic_field_data(
     dynamic_field: dict[str, Any], batch_size: int
 ) -> list[Any]:
@@ -422,6 +521,124 @@ def _estimate_row_size_from_sample(
     return bytes_per_row
 
 
+def _enhanced_estimate_row_size_from_sample(
+    fields: list[dict[str, Any]],
+    sample_size: int,
+    pk_offset: int,
+    format: str,
+    schema: dict[str, Any],
+    seed: int | None = None,
+    num_iterations: int = 3,  # 多次采样
+    base_sample_size: int = 10000,  # 增加基础采样量到10000
+) -> tuple[float, dict[str, Any]]:
+    """
+    Enhanced version of row size estimation with multiple sampling and statistics.
+    
+    Improvements:
+    1. Multiple sampling iterations for better accuracy
+    2. Increased base sample size to 10000 (from 1000)
+    3. Statistical analysis with confidence metrics
+    4. Adaptive adjustment based on variance
+    5. Detailed estimation statistics
+    
+    Args:
+        fields: Field definitions
+        sample_size: Target sample size (will be adapted)
+        pk_offset: Primary key offset
+        format: Output format
+        schema: Schema definition
+        seed: Random seed
+        num_iterations: Number of sampling iterations
+        base_sample_size: Base sample size (default 10000)
+    
+    Returns:
+        (adjusted_bytes_per_row, estimation_stats)
+    """
+    from loguru import logger
+    
+    # Use larger sample size, but respect memory limits
+    adaptive_sample_size = min(max(base_sample_size, sample_size), 50000)
+    
+    logger.info(f"🔍 Enhanced estimation: {num_iterations} iterations × {adaptive_sample_size:,} rows each")
+    
+    sample_results = []
+    
+    # Multiple sampling iterations
+    for i in range(num_iterations):
+        # Use different seed for each iteration to avoid identical samples
+        iteration_seed = (seed + i * 1000) if seed else None
+        
+        # Call the original estimation function for each sample
+        bytes_per_row = _estimate_row_size_from_sample(
+            fields, 
+            adaptive_sample_size, 
+            pk_offset + i * adaptive_sample_size, 
+            format, 
+            schema, 
+            iteration_seed
+        )
+        
+        sample_results.append(bytes_per_row)
+        logger.debug(f"   📊 Sample {i+1}: {bytes_per_row:.2f} bytes/row")
+    
+    # Calculate statistical metrics
+    mean_size = np.mean(sample_results)
+    std_size = np.std(sample_results)
+    min_size = np.min(sample_results)
+    max_size = np.max(sample_results)
+    
+    # Calculate coefficient of variation
+    cv = std_size / mean_size if mean_size > 0 else 0
+    
+    # Intelligent adjustment based on variance
+    if cv < 0.03:  # Very low variance (< 3%)
+        adjusted_size = mean_size
+        confidence = "Very High"
+        adjustment_reason = "Low variance, using mean"
+        adjustment_factor = 1.0
+    elif cv < 0.08:  # Low variance (< 8%)
+        adjusted_size = mean_size * 1.02  # 2% safety margin
+        confidence = "High" 
+        adjustment_reason = "Low variance, small safety margin"
+        adjustment_factor = 1.02
+    elif cv < 0.15:  # Medium variance (< 15%)
+        adjusted_size = mean_size * 1.05  # 5% safety margin
+        confidence = "Medium"
+        adjustment_reason = "Medium variance, moderate safety margin"
+        adjustment_factor = 1.05
+    else:  # High variance (>= 15%)
+        adjusted_size = max_size * 1.08  # Use max + 8% safety margin
+        confidence = "Lower"
+        adjustment_reason = "High variance, using max + safety margin"
+        adjustment_factor = max_size / mean_size * 1.08
+    
+    # Create detailed statistics
+    estimation_stats = {
+        "method": "enhanced_multi_sample",
+        "num_iterations": num_iterations,
+        "sample_size_per_iteration": adaptive_sample_size,
+        "total_samples": num_iterations * adaptive_sample_size,
+        "samples": sample_results,
+        "mean_bytes_per_row": float(mean_size),
+        "std_bytes_per_row": float(std_size),
+        "min_bytes_per_row": float(min_size),
+        "max_bytes_per_row": float(max_size),
+        "coefficient_of_variation": float(cv),
+        "confidence_level": confidence,
+        "adjusted_bytes_per_row": float(adjusted_size),
+        "adjustment_factor": float(adjustment_factor),
+        "adjustment_reason": adjustment_reason,
+    }
+    
+    logger.info(f"📈 Estimation results:")
+    logger.info(f"   Mean: {mean_size:.2f} bytes/row (±{std_size:.2f})")
+    logger.info(f"   Range: {min_size:.2f} - {max_size:.2f}")
+    logger.info(f"   CV: {cv:.1%}, Confidence: {confidence}")
+    logger.info(f"   Adjusted: {adjusted_size:.2f} bytes/row ({adjustment_reason})")
+    
+    return adjusted_size, estimation_stats
+
+
 def _detect_uniform_column(column: pd.Series, field: dict[str, Any]) -> dict[str, Any] | None:
     """
     Detect if a column has uniform values that can be optimized.
@@ -580,13 +797,14 @@ def _generate_scalar_field_data(
     """
     field_type = field["type"]
 
-    # Handle primary key generation
+    # Handle primary key generation - ensure global uniqueness
     if (
         field.get("is_primary", False)
         and field_type == "Int64"
         and not field.get("auto_id", False)
     ):
-        return np.arange(pk_offset, pk_offset + num_rows, dtype=np.int64)
+        # Generate consecutive unique primary keys starting from pk_offset + 1
+        return np.arange(pk_offset + 1, pk_offset + num_rows + 1, dtype=np.int64)
 
     # Check if field is nullable (null probability from legacy generator)
     is_nullable = field.get("nullable", False)
@@ -811,14 +1029,17 @@ def _generate_regular_scalar_data(
 
 def generate_data_optimized(
     schema_path: Path,
-    rows: int,
+    total_rows: int,
     output_dir: Path,
     format: str = "parquet",
     batch_size: int = 50000,
     seed: int | None = None,
-    max_file_size_mb: int = 256,
-    max_rows_per_file: int = 1000000,
+    file_size: str | None = None,
+    rows_per_file: int = 1000000,
     progress_callback: Any = None,
+    num_partitions: int | None = None,
+    num_shards: int | None = None,
+    file_count: int | None = None,
 ) -> list[str]:
     """
     Optimized data generation using vectorized NumPy operations with file partitioning.
@@ -852,9 +1073,11 @@ def generate_data_optimized(
     if seed:
         np.random.seed(seed)
 
-    # Pre-analyze schema for optimization
+    # Pre-analyze schema for optimization and distribution
     vector_fields = []
     scalar_fields = []
+    partition_key_field = None
+    primary_key_field = None
 
     for field in fields:
         # Skip auto_id fields - they should not be generated
@@ -867,47 +1090,124 @@ def generate_data_optimized(
             logger.info(f"Skipping BM25 output field: {field['name']}")
             continue
 
+        # Identify special fields
+        if field.get("is_partition_key", False):
+            partition_key_field = field
+        if field.get("is_primary", False):
+            primary_key_field = field
+
         if "Vector" in field["type"]:
             vector_fields.append(field)
         else:
             scalar_fields.append(field)
 
-    # Estimate rows per file based on file size constraint using real data sampling
-    max_file_size_bytes = max_file_size_mb * 1024 * 1024
+    # Validate distribution parameters
+    if num_partitions and not partition_key_field:
+        logger.warning("num_partitions specified but no partition key field found in schema. Ignoring partitions parameter.")
+        num_partitions = None
+    
+    if num_partitions and partition_key_field:
+        logger.info(f"Partition distribution enabled: {num_partitions} partitions using field '{partition_key_field['name']}'")
+    
+    if num_shards and primary_key_field:
+        logger.info(f"Shard distribution enabled: {num_shards} shards using primary key '{primary_key_field['name']}'")
+    elif num_shards:
+        logger.warning("num_shards specified but no primary key field found in schema. Ignoring shards parameter.")
+        num_shards = None
 
-    # Generate a sample to get accurate row size estimation
-    # Use adaptive sampling: smaller sample for small datasets, larger for big datasets
-    sample_size = min(
-        max(1000, rows // 50), 10000
-    )  # 1K-10K rows, 2% of data or 10K max
-    logger.info(f"Sampling {sample_size:,} rows to estimate file size...")
+    # Handle file size and count parameters with conflict resolution
+    rows = total_rows  # Local variable for calculations
+    
+    # Initialize estimation stats (will be populated by enhanced estimation)
+    estimation_stats = {"method": "none", "note": "No size estimation performed"}
+    
+    if file_size and file_count:
+        # CONFLICT: Both file size and count specified
+        # Priority: file_count + file_size determine total rows (ignore --total-rows)
+        logger.warning("Both --file-size and --file-count specified. Ignoring --total-rows parameter.")
+        logger.info("Using file-count + file-size mode: total rows will be calculated")
+        
+        # Use enhanced estimation with multiple sampling
+        sample_size = min(max(1000, total_rows // 50), 10000)
+        logger.info(f"Using enhanced estimation for file size control...")
+        
+        actual_row_size_bytes, estimation_stats = _enhanced_estimate_row_size_from_sample(
+            fields, sample_size, 0, format, schema, seed, num_iterations=3
+        )
+        
+        # Calculate total rows based on file_count × file_size
+        target_size_bytes = _parse_file_size(file_size)
+        effective_max_rows_per_file = max(1, int(target_size_bytes // actual_row_size_bytes))
+        calculated_total_rows = file_count * effective_max_rows_per_file
+        
+        logger.info(f"Calculated total rows: {calculated_total_rows:,} ({file_count} files × {effective_max_rows_per_file:,} rows/file)")
+        logger.info(f"Target: {file_count} files of {file_size} each")
+        
+        # Override the original rows parameter
+        rows = calculated_total_rows
+        
+    elif file_count:
+        # Only file count specified - distribute existing rows
+        logger.info("Using file-count mode: distributing rows across specified number of files")
+        
+        sample_size = min(max(1000, rows // 50), 10000)
+        logger.info(f"Using enhanced estimation for file count mode...")
+        
+        actual_row_size_bytes, estimation_stats = _enhanced_estimate_row_size_from_sample(
+            fields, sample_size, 0, format, schema, seed, num_iterations=3
+        )
+        
+        effective_max_rows_per_file = max(1, rows // file_count)
+        estimated_file_size_mb = (effective_max_rows_per_file * actual_row_size_bytes) / (1024 * 1024)
+        logger.info(f"Target: {file_count} files, ~{effective_max_rows_per_file:,} rows/file, ~{estimated_file_size_mb:.1f}MB/file")
+        
+    elif file_size:
+        # Only file size specified - calculate how many files needed
+        logger.info("Using file-size mode: calculating number of files needed")
+        
+        sample_size = min(max(1000, rows // 50), 10000)
+        logger.info(f"Using enhanced estimation for file size mode...")
+        
+        actual_row_size_bytes, estimation_stats = _enhanced_estimate_row_size_from_sample(
+            fields, sample_size, 0, format, schema, seed, num_iterations=3
+        )
+        
+        target_size_bytes = _parse_file_size(file_size)
+        effective_max_rows_per_file = max(1, int(target_size_bytes // actual_row_size_bytes))
+        estimated_file_count = max(1, (rows + effective_max_rows_per_file - 1) // effective_max_rows_per_file)
+        logger.info(f"Target: {file_size} per file, ~{effective_max_rows_per_file:,} rows/file, ~{estimated_file_count} files")
+            
+    else:
+        # Use default logic with rows_per_file as maximum constraint
+        # Default file size is 256MB if not specified
+        logger.info("Using default file size control mode (256MB max)")
+        default_file_size_bytes = 256 * 1024 * 1024
 
-    actual_row_size_bytes = _estimate_row_size_from_sample(
-        fields,
-        sample_size,
-        0,  # Use 0 as initial pk_offset for sampling
-        format,
-        schema,
-        seed,
-    )
-    estimated_rows_per_file_from_size = max(
-        100, int(max_file_size_bytes // actual_row_size_bytes)
-    )
+        # Use enhanced estimation for default mode
+        sample_size = min(max(1000, rows // 50), 10000)
+        logger.info(f"Using enhanced estimation for default mode...")
 
-    logger.info(
-        f"Sample analysis: {actual_row_size_bytes:.1f} bytes/row (based on {sample_size:,} rows), "
-        f"estimated {estimated_rows_per_file_from_size:,} rows for {max_file_size_mb}MB limit"
-    )
+        actual_row_size_bytes, estimation_stats = _enhanced_estimate_row_size_from_sample(
+            fields, sample_size, 0, format, schema, seed, num_iterations=3
+        )
+        estimated_rows_per_file_from_size = max(
+            100, int(default_file_size_bytes // actual_row_size_bytes)
+        )
 
-    # Use the more restrictive constraint (smaller value)
-    effective_max_rows_per_file = min(
-        max_rows_per_file, estimated_rows_per_file_from_size
-    )
+        logger.info(
+            f"Sample analysis: {actual_row_size_bytes:.1f} bytes/row (based on {sample_size:,} rows), "
+            f"estimated {estimated_rows_per_file_from_size:,} rows for 256MB limit"
+        )
 
-    logger.info(
-        f"File partitioning: max {max_rows_per_file:,} rows/file or {max_file_size_mb}MB/file, "
-        f"using {effective_max_rows_per_file:,} rows/file"
-    )
+        # Use the more restrictive constraint (smaller value)
+        effective_max_rows_per_file = min(
+            rows_per_file, estimated_rows_per_file_from_size
+        )
+
+        logger.info(
+            f"File partitioning: max {rows_per_file:,} rows/file or 256MB/file, "
+            f"using {effective_max_rows_per_file:,} rows/file"
+        )
 
     # Calculate total number of files needed
     total_files = max(
@@ -932,10 +1232,23 @@ def generate_data_optimized(
         generation_start = time.time()
         data: dict[str, Any] = {}
 
-        # Generate scalar fields efficiently
+        # Generate partition key with enough unique values (if partition key exists)
+        if partition_key_field and num_partitions:
+            # Generate partition key values with unique count = num_partitions * 10
+            partition_unique_count = num_partitions * 10
+            partition_values = _generate_partition_key_with_cardinality(
+                partition_key_field, current_batch_rows, partition_unique_count, pk_offset
+            )
+            data[partition_key_field["name"]] = partition_values
+
+        # Generate remaining scalar fields efficiently
         for field in scalar_fields:
             field_name = field["name"]
             field_type = field["type"]
+
+            # Skip fields already generated (partition key, primary key)
+            if field_name in data:
+                continue
 
             if field_type in [
                 "Int8",
@@ -1264,6 +1577,8 @@ def generate_data_optimized(
             }
             all_optimization_info.append(file_optimization)
 
+        # No need to collect complex distribution info - just record basic stats
+
         # Convert JSON fields to strings for Parquet storage
         if format.lower() == "parquet":
             # Handle regular JSON fields
@@ -1398,6 +1713,12 @@ def generate_data_optimized(
     meta_file = output_dir / "meta.json"
     total_time = time.time() - start_time
 
+    # Calculate actual file size limit in MB
+    if file_size:
+        target_file_size_mb = _parse_file_size(file_size) / (1024 * 1024)
+    else:
+        target_file_size_mb = 256  # Default 256MB
+    
     metadata = {
         "schema": schema,
         "generation_info": {
@@ -1406,14 +1727,33 @@ def generate_data_optimized(
             "seed": seed,
             "data_files": [Path(f).name for f in all_files_created],
             "file_count": len(all_files_created),
-            "max_rows_per_file": max_rows_per_file,
-            "max_file_size_mb": max_file_size_mb,
+            "max_rows_per_file": rows_per_file,
+            "max_file_size_mb": target_file_size_mb,
             "generation_time": total_generation_time,
             "write_time": total_write_time,
             "total_time": total_time,
             "rows_per_second": rows / total_time,
+            "size_estimation": estimation_stats,
         },
     }
+    
+    # Add collection configuration for Milvus create_collection
+    collection_config = {}
+    
+    # Add partition configuration if specified
+    if num_partitions and partition_key_field:
+        collection_config["num_partitions"] = num_partitions
+        collection_config["partition_key_field"] = partition_key_field["name"]
+        logger.info(f"Collection config: {num_partitions} partitions using field '{partition_key_field['name']}'")
+    
+    # Add shard configuration if specified  
+    if num_shards:
+        collection_config["num_shards"] = num_shards
+        logger.info(f"Collection config: {num_shards} shards")
+    
+    # Add collection config to metadata if any settings were specified
+    if collection_config:
+        metadata["collection_config"] = collection_config
     
     # Add optimization information if any occurred
     if all_optimization_info:
@@ -1445,8 +1785,26 @@ def generate_data_optimized(
             "note": "No uniform columns detected for optimization"
         }
 
+    # Convert numpy types to native Python types for JSON serialization
+    def convert_numpy_types(obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, dict):
+            return {key: convert_numpy_types(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_numpy_types(item) for item in obj]
+        else:
+            return obj
+    
+    # Convert metadata to handle numpy types
+    serializable_metadata = convert_numpy_types(metadata)
+    
     with open(meta_file, "w") as f:
-        json.dump(metadata, f, indent=2)
+        json.dump(serializable_metadata, f, indent=2)
 
     logger.info(
         f"Total generation completed: {rows:,} rows in {len(all_files_created)} file(s)"

@@ -100,12 +100,12 @@ def main(ctx: click.Context, verbose: bool = False) -> None:
     help="Use a built-in schema (e.g., 'ecommerce', 'documents').",
 )
 @click.option(
-    "--rows",
+    "--total-rows",
     "-r",
     default=1000,
     show_default=True,
     type=int,
-    help="Number of rows to generate.",
+    help="Total number of rows to generate.",
 )
 @click.option(
     "-f",
@@ -153,27 +153,43 @@ def main(ctx: click.Context, verbose: bool = False) -> None:
     help="Force overwrite output directory if it exists.",
 )
 @click.option(
-    "--max-file-size",
-    "max_file_size_mb",
-    default=256,
-    show_default=True,
-    type=int,
-    help="Maximum size per file in MB (for automatic file partitioning).",
+    "--file-size",
+    "file_size",
+    type=str,
+    help="File size limit. Can be exact size ('10GB', '200MB') or max size in MB (e.g., '256'). Default: 256MB.",
 )
 @click.option(
-    "--max-rows-per-file",
-    "max_rows_per_file",
+    "--rows-per-file",
+    "rows_per_file",
     default=1000000,
     show_default=True,
     type=int,
     help="Maximum rows per file (for automatic file partitioning).",
+)
+@click.option(
+    "--file-count",
+    "file_count",
+    type=int,
+    help="Target number of files. If used with --file-size, total rows will be calculated (ignores --total-rows).",
+)
+@click.option(
+    "--partitions",
+    "num_partitions",
+    type=int,
+    help="Number of partitions to simulate. Requires partition key field in schema.",
+)
+@click.option(
+    "--shards", 
+    "num_shards",
+    type=int,
+    help="Number of shards (VChannels) to simulate. Data distributed based on primary key hash.",
 )
 @click.pass_context
 def generate(
     ctx: click.Context,
     schema_path: Path | None = None,
     builtin_schema: str | None = None,
-    rows: int = 1000,
+    total_rows: int = 1000,
     output_format: str = "parquet",
     output_path: Path | None = None,
     seed: int | None = None,
@@ -182,8 +198,11 @@ def generate(
     no_progress: bool = False,
     batch_size: int = 50000,
     force: bool = False,
-    max_file_size_mb: int = 256,
-    max_rows_per_file: int = 1000000,
+    file_size: str | None = None,
+    rows_per_file: int = 1000000,
+    file_count: int | None = None,
+    num_partitions: int | None = None,
+    num_shards: int | None = None,
 ) -> None:
     """Generate high-performance mock data from schema using optimized vectorized operations.
 
@@ -200,7 +219,7 @@ def generate(
     logger.info(
         "Starting data generation",
         extra={
-            "rows": rows,
+            "total_rows": total_rows,
             "format": output_format,
             "verbose": verbose,
             "batch_size": batch_size,
@@ -359,7 +378,7 @@ def generate(
 
         # Display schema preview
         generation_config = {
-            "rows": rows,
+            "total_rows": total_rows,
             "batch_size": batch_size,
             "seed": seed,
             "format": output_format,
@@ -397,13 +416,16 @@ def generate(
                 try:
                     files_created = generate_data_optimized(
                         schema_path=temp_schema_file,
-                        rows=preview_rows,
+                        total_rows=preview_rows,
                         output_dir=temp_output,
                         batch_size=preview_rows,
                         format="parquet",  # Always use parquet for preview
+                        num_partitions=num_partitions,
+                        num_shards=num_shards,
                         seed=seed,
-                        max_rows_per_file=preview_rows,
-                        max_file_size_mb=256
+                        rows_per_file=preview_rows,
+                        file_size=None,  # Don't use size controls for preview
+                        file_count=None,
                     )
                     
                     if files_created:
@@ -465,7 +487,7 @@ def generate(
     logger.info(
         "Starting data generation",
         schema_file=str(schema_path),
-        rows=rows,
+        rows=total_rows,
         batch_size=batch_size,
     )
     if output_path is None:
@@ -502,21 +524,24 @@ def generate(
         "Starting high-performance data generation",
         output_dir=str(output_path),
         format=output_format,
-        rows=rows,
+        rows=total_rows,
     )
     try:
         # High-performance parallel generator (default and only mode)
         logger.info("Using vectorized high-performance generator")
         _save_with_high_performance_generator(
             schema_path,
-            rows,
+            total_rows,
             output_path,
             output_format,
             batch_size=batch_size,
             seed=seed,
             show_progress=not no_progress,
-            max_file_size_mb=max_file_size_mb,
-            max_rows_per_file=max_rows_per_file,
+            file_size=file_size,
+            rows_per_file=rows_per_file,
+            num_partitions=num_partitions,
+            num_shards=num_shards,
+            file_count=file_count,
         )
         # Calculate directory size for logging (output is always a directory now)
         total_size = sum(
@@ -526,18 +551,18 @@ def generate(
 
         logger.info(
             "Data generation completed successfully",
-            rows=rows,
+            rows=total_rows,
             output_file=str(output_path),
             file_size_mb=file_size_mb,
         )
         # Output is always a directory now
-        click.echo(f"Saved {rows} rows to directory {output_path.resolve()}")
+        click.echo(f"Saved {total_rows} rows to directory {output_path.resolve()}")
     except Exception as e:
         log_error_with_context(
             e,
             {
                 "operation": "data_generation",
-                "rows": rows,
+                "rows": total_rows,
                 "output_path": str(output_path),
                 "batch_size": batch_size,
             },
@@ -1141,14 +1166,17 @@ def import_to_milvus(
 
 def _save_with_high_performance_generator(
     schema_path: Path,
-    rows: int,
+    total_rows: int,
     output_path: Path,
     fmt: str,
     batch_size: int = 10000,
     seed: int | None = None,
     show_progress: bool = True,
-    max_file_size_mb: int = 256,
-    max_rows_per_file: int = 1000000,
+    file_size: str | None = None,
+    rows_per_file: int = 1000000,
+    num_partitions: int | None = None,
+    num_shards: int | None = None,
+    file_count: int | None = None,
 ) -> None:
     """Save using high-performance vectorized generator optimized for large-scale data."""
     import time
@@ -1166,7 +1194,7 @@ def _save_with_high_performance_generator(
         schema_file=str(schema_path),
         output_dir=str(output_path),
         format=fmt,
-        rows=rows,
+        total_rows=total_rows,
         batch_size=optimized_batch_size,
     )
 
@@ -1181,7 +1209,7 @@ def _save_with_high_performance_generator(
                 TimeElapsedColumn(),
             ) as progress:
                 task = progress.add_task(
-                    "Generating data with high-performance mode...", total=rows
+                    "Generating data with high-performance mode...", total=total_rows
                 )
 
                 # Progress callback to update the progress bar
@@ -1191,29 +1219,35 @@ def _save_with_high_performance_generator(
                 # Run optimized generator with progress callback
                 files_created = generate_data_optimized(
                     schema_path=schema_path,
-                    rows=rows,
+                    total_rows=total_rows,
                     output_dir=output_path,
                     format=fmt,
                     batch_size=optimized_batch_size,
                     seed=seed,
-                    max_file_size_mb=max_file_size_mb,
-                    max_rows_per_file=max_rows_per_file,
+                    file_size=file_size,
+                    rows_per_file=rows_per_file,
+                    num_partitions=num_partitions,
+                    num_shards=num_shards,
+                    file_count=file_count,
                     progress_callback=update_progress,
                 )
 
                 # Ensure progress shows 100% at the end
-                progress.update(task, completed=rows)
+                progress.update(task, completed=total_rows)
         else:
             # Run without progress bar
             files_created = generate_data_optimized(
                 schema_path=schema_path,
-                rows=rows,
+                total_rows=total_rows,
                 output_dir=output_path,
                 format=fmt,
                 batch_size=optimized_batch_size,
                 seed=seed,
-                max_file_size_mb=max_file_size_mb,
-                max_rows_per_file=max_rows_per_file,
+                file_size=file_size,
+                rows_per_file=rows_per_file,
+                num_partitions=num_partitions,
+                num_shards=num_shards,
+                file_count=file_count,
             )
 
         # Log performance metrics
@@ -1226,17 +1260,17 @@ def _save_with_high_performance_generator(
         log_performance(
             "high_performance_generator",
             total_time,
-            rows=rows,
+            total_rows=total_rows,
             batch_size=optimized_batch_size,
             file_size_mb=file_size_mb,
         )
         logger.info(
             "High-performance generator completed",
-            total_rows=rows,
+            total_rows=total_rows,
             output_dir=str(output_path),
             file_size_mb=file_size_mb,
             duration_seconds=total_time,
-            rows_per_second=rows / total_time if total_time > 0 else 0,
+            rows_per_second=total_rows / total_time if total_time > 0 else 0,
         )
     except Exception as e:
         logger.error(f"High-performance generator failed: {e}")
